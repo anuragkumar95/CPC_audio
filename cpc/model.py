@@ -334,10 +334,13 @@ class CPCModel(nn.Module):
         self.VQpushCtxCenterWeight = None
         self.VQgradualStart = None
         self.hierARgradualStart = None
+        self.hierARmergePrior = None
         self.modelLengthInARsimple = False
         self.modelLengthInARpredDep = None  # num preds if do
+        self.modelLengthInARconv = None
         self.shrinkEncodingsLengthDims = False
         self.showLengthsInCtx = False
+        
         if self.doMod:
             self.modDebug = modSettings["modDebug"]
             self.shrinkEncodingsLengthDims = modSettings["shrinkEncodingsLengthDims"]
