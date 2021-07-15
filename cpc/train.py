@@ -55,7 +55,9 @@ def getCriterion(args, downsampling, nSpeakers, nPhones):
                                                         speakerEmbedding=args.speakerEmbedding,
                                                         sizeInputSeq=sizeInputSeq,
                                                         numLevels=args.CPCCTCNumLevels,
-                                                        reductionFactor=args.CPCCTCReductionFactor)
+                                                        reductionFactor=args.CPCCTCReductionFactor,
+                                                        smartPooling=args.smartPooling,
+                                                        stepReduction=args.stepReduction)
 
             else:
                 cpcCriterion = cr.CPCUnsupersivedCriterion(args.nPredicts,

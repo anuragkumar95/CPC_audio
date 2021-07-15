@@ -1,3 +1,4 @@
+import sys
 import torch
 from torch import autograd, nn
 import torch.nn.functional as F
@@ -158,6 +159,8 @@ class CPCUnsupersivedCriterion(BaseCriterion):
                  negativeSamplingExt,   # Number of negative samples to draw
                  reductionFactor,       # Subsampling factor at each CPC head
                  numLevels,             # Number of CPC heads
+                 smartPooling,
+                 stepReduction,
                  allowed_skips_beg=0,     # number of predictions that we can skip at the beginning
                  allowed_skips_end=0,     # number of predictions that we can skip at the end
                  predict_self_loop=False, # always predict a repetition of the first symbol
@@ -232,6 +235,8 @@ class CPCUnsupersivedCriterion(BaseCriterion):
         self.mode = mode
         self.reductionFactor = reductionFactor
         self.numLevels = numLevels
+        self.smartPooling = smartPooling
+        self.stepReduction = stepReduction
 
     def sampleClean(self, encodedData, windowSize, level):
 
@@ -249,7 +254,7 @@ class CPCUnsupersivedCriterion(BaseCriterion):
             batchIdx = torch.remainder(batchIdx, self.limit_negs_in_batch)
             batchBaseIdx = torch.arange(0, batchSize, device=encodedData.device)
             batchBaseIdx -= torch.remainder(batchBaseIdx, self.limit_negs_in_batch)
-            batchIdx += batchBaseIdx.unsqueeze(1) 
+            batchIdx += batchBaseIdx.unsqueeze(1)
             # we can get too large, if batchsize is not divisible by limit_negs_in_batch
             batchIdx = torch.remainder(batchIdx, batchSize)
 
@@ -299,15 +304,18 @@ class CPCUnsupersivedCriterion(BaseCriterion):
 
         # return outputs, labelLoss
 
-    def applyCPCHead(self, cFeature, encodedData, label, level):
+    def applyCPCHead(self, cFeature, encodedData, label, windowSizes, level):
+        maxWindowSize = torch.max(windowSizes)
+        cFeature = cFeature[:, :maxWindowSize]
         batchSize = cFeature.size(0)
-        windowSize = cFeature.size(1)        
+
         # sampledData, labelLoss = self.sampleClean(encodedData, windowSize)
         # negatives: BS x Len x NumNegs x D
-        sampledNegs = self.sampleClean(encodedData, windowSize, level).permute(0, 2, 1, 3)
+        # sampledNegs = self.sampleClean(encodedData, windowSize, level).permute(0, 2, 1, 3)
+        sampledNegs = torch.randn(size=(batchSize, maxWindowSize, self.negativeSamplingExt, cFeature.size(2))).cuda()
 
         if self.speakerEmb is not None:
-            l_ = label.view(batchSize, 1).expand(batchSize, windowSize)
+            l_ = label.view(batchSize, 1).expand(batchSize, maxWindowSize)
             embeddedSpeaker = self.speakerEmb(l_)
             cFeature = torch.cat([cFeature, embeddedSpeaker], dim=2)
 
@@ -318,13 +326,13 @@ class CPCUnsupersivedCriterion(BaseCriterion):
         extra_preds = []
 
         if self.learn_blank:
-            extra_preds.append(self.blank_proto.expand(batchSize, windowSize, self.blank_proto.size(2), 1))
+            extra_preds.append(self.blank_proto.expand(batchSize, maxWindowSize, self.blank_proto.size(2), 1))
 
         if self.predict_self_loop:
             # old and buggy
             # extra_preds.append(cFeature.unsqueeze(-1))
             # new and shiny
-            extra_preds.append(encodedData[:, :windowSize, :].unsqueeze(-1) )  # * self.self_loop_gain)
+            extra_preds.append(encodedData[:, :maxWindowSize, :].unsqueeze(-1) )  # * self.self_loop_gain)
 
         if extra_preds:
             nPredicts += len(extra_preds)
@@ -365,22 +373,27 @@ class CPCUnsupersivedCriterion(BaseCriterion):
                          neg_log_tot_scores.expand_as(pos_log_scores)), 0), 
             dim=0)[0]
         
-        log_scores = log_scores.view(batchSize*windowSize, self.nMatched[level], nPredicts)
+        log_scores = log_scores.view(batchSize*maxWindowSize, self.nMatched[level], nPredicts)
         # print('ls-stats', log_scores.mean().item(), log_scores.std().item())
         if self.masq_buffer is not None:
+            raise NotImplementedError
             masq_buffer = self.masq_buffer
             if extra_preds:
                 masq_buffer = torch.cat([masq_buffer[:, :, :1]] * (len(extra_preds) - 1) + [masq_buffer], dim=2)
             log_scores = log_scores.masked_fill(masq_buffer > 0, -1000)
         losses, aligns = soft_align(log_scores / self.loss_temp, self.allowed_skips_beg, self.allowed_skips_end, not self.learn_blank)
-        losses = losses * self.loss_temp
-
-        pos_is_selected = (pos_log_scores > neg_log_scores.max(2, keepdim=True)[0]).view(batchSize*windowSize, self.nMatched[level], nPredicts)
-
+        losses = torch.nn.utils.rnn.pack_padded_sequence(losses.view(batchSize, maxWindowSize), windowSizes, batch_first=True, enforce_sorted=False)
+        losses = losses.data * self.loss_temp
+        pos_is_selected = (pos_log_scores > neg_log_scores.max(2, keepdim=True)[0]).view(batchSize*maxWindowSize, self.nMatched[level], nPredicts)
+        
         # This is approximate Viterbi alignment loss and accurracy
-        outLosses = -torch.gather(log_scores, 2, aligns.unsqueeze(-1)).squeeze(-1).float().mean(0, keepdim=True)
-        outAcc = torch.gather(pos_is_selected, 2, aligns.unsqueeze(-1)).squeeze(-1).float().mean(0, keepdim=True)
+        outLosses = -torch.gather(log_scores, 2, aligns.unsqueeze(-1)).view(batchSize, maxWindowSize, self.nMatched[level], 1)
+        outLosses = torch.nn.utils.rnn.pack_padded_sequence(outLosses, windowSizes, batch_first=True, enforce_sorted=False)
+        outLosses = outLosses.data.squeeze(-1).float().mean(0, keepdim=True)
 
+        outAcc = torch.gather(pos_is_selected, 2, aligns.unsqueeze(-1)).view(batchSize, maxWindowSize, self.nMatched[level], 1)
+        outAcc = torch.nn.utils.rnn.pack_padded_sequence(outAcc, windowSizes, batch_first=True, enforce_sorted=False)
+        outAcc = outAcc.data.squeeze(-1).float().mean(0, keepdim=True)
         # just simulate a per-prediction loss
         outLossesD = outLosses.detach()
         losses = losses.mean() / outLossesD.sum() * outLossesD
@@ -398,29 +411,36 @@ class CPCUnsupersivedCriterion(BaseCriterion):
         for l in range(self.numLevels):
             cFeature = cFeatures[l]
             if l > 0:
-                # Random pooling
-                encodedData = encodedData.view(encodedData.size(0), encodedData.size(1) // self.reductionFactor, self.reductionFactor, encodedData.size(2))
-                pickedIdxs = torch.randint(encodedData.size(2), size=(encodedData.size(1),))
-                encodedData = encodedData[:, torch.arange(encodedData.size(1)), pickedIdxs, :]
+                if self.smartPooling:
+                    encodedData = cFeature['encodedData']
+                    seqSize = cFeature['seqLens'].cpu()
+                    cFeature = cFeature['states']
+                else:
+                    # Random uniform pooling
+                    encodedData = encodedData.view(encodedData.size(0), encodedData.size(1) // self.reductionFactor, self.reductionFactor, encodedData.size(2))
+                    pickedIdxs = torch.randint(encodedData.size(2), size=(encodedData.size(1),))
+                    encodedData = encodedData[:, torch.arange(encodedData.size(1)), pickedIdxs, :]
+                    seqSize = torch.IntTensor([cFeature.size(1)])
+            else:
+                seqSize = torch.IntTensor([cFeature.size(1)])
             
             if self.mode == "reverse":
                 encodedData = torch.flip(encodedData, [1])
                 cFeature = torch.flip(cFeature, [1])
 
-            batchSize, seqSize, dimAR = cFeature.size()
-            windowSize = seqSize - self.nMatched[l]
-
-            cFeature = cFeature[:, :windowSize]
+            # batchSize, seqSize, dimAR = cFeature.size()
+            batchSize = cFeature.size(0)
+            windowSizes = seqSize - self.nMatched[l]
 
             if self.normalize_enc:
                 encodedData = F.layer_norm(encodedData, (encodedData.size(-1),))
 
-            lossesAtLevel, outAccAtLevel, alignsAtLevel, predictionsAtLevel, logScoresAtLevel = self.applyCPCHead(cFeature, encodedData, label, level=l)
+            lossesAtLevel, outAccAtLevel, alignsAtLevel, predictionsAtLevel, logScoresAtLevel = self.applyCPCHead(cFeature, encodedData, label, windowSizes, level=l)
             losses.append(lossesAtLevel)
             outAcc.append(outAccAtLevel)
-            aligns.append(alignsAtLevel.detach().view(batchSize, windowSize, self.nMatched[l]))
+            aligns.append(alignsAtLevel.detach().view(batchSize, windowSizes.max(), self.nMatched[l]))
             predictions.append(predictionsAtLevel)
-            logScores.append(logScoresAtLevel.detach().view(batchSize, windowSize, self.nMatched[l], -1))
+            logScores.append(logScoresAtLevel.detach().view(batchSize, windowSizes.max(), self.nMatched[l], -1))
 
         captureRes = None
         if captureOptions != None:

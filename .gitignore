@@ -5,3 +5,5 @@ __pycache__
 cpc/eval/ABX/*so
 cpc/eval/ABX/*.c
 build/
+cpc/dummy.py
+.vscode

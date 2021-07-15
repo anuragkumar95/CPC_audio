@@ -10,6 +10,75 @@ import sys
 import psutil
 from copy import deepcopy
 from bisect import bisect_left
+import torch.nn.functional as F
+
+def sequence_segmenter(encodedData, final_length_factor, step_reduction=0.2):
+    assert not torch.isnan(encodedData).any()
+    device = encodedData.device
+    encFlat = F.pad(encodedData.reshape(-1, encodedData.size(-1)).detach(), (0, 0, 1, 0))
+    feat_csum = encFlat.cumsum(0)
+    feat_csum2 = (encFlat**2).cumsum(0)
+    idx = torch.arange(feat_csum.size(0), device=feat_csum.device)
+
+    final_length = int(final_length_factor * len(encFlat))
+
+    while len(idx) > final_length:
+        begs = idx[:-2]
+        ends = idx[2:]
+
+        sum1 = (feat_csum.index_select(0, ends) - feat_csum.index_select(0, begs))
+        sum2 = (feat_csum2.index_select(0, ends) - feat_csum2.index_select(0, begs))
+        num_elem = (ends-begs).float().unsqueeze(1)
+
+        diffs = F.pad(torch.sqrt(((sum2/ num_elem - (sum1/ num_elem)**2) ).mean(1)), (1,1), value=1e10)
+
+        num_to_retain = max(final_length, int(idx.shape[-1] * step_reduction))
+        _, keep_idx = torch.topk(diffs, num_to_retain)
+        keep_idx = torch.sort(keep_idx)[0]
+        idx = idx.index_select(0, keep_idx)
+    
+    # Ensure that minibatch boundaries are preserved
+    seq_end_idx = torch.arange(0, encodedData.size(0)*encodedData.size(1), encodedData.size(1), device=device)
+    idx = torch.unique(torch.cat((idx, seq_end_idx)), sorted=True)
+
+    # now work out cut indices in each minibatch element
+    batch_elem_idx = idx // encodedData.size(1)
+    transition_idx = F.pad(torch.nonzero(batch_elem_idx[1:] != batch_elem_idx[:-1]), (0,0, 1,0))
+    cutpoints = (torch.nonzero((idx % encodedData.size(1)) == 0))
+    compressed_lens = (cutpoints[1:]-cutpoints[:-1]).squeeze(1)
+
+    seq_idx = torch.nn.utils.rnn.pad_sequence(
+        torch.split(idx[1:] % encodedData.size(1), tuple(cutpoints[1:]-cutpoints[:-1])), batch_first=True)
+    seq_idx[seq_idx==0] = encodedData.size(1)
+    seq_idx = F.pad(seq_idx, (1,0,0,0))
+
+    frame_idxs = torch.arange(encodedData.size(1), device=device).view(1, 1, -1)
+    compress_matrices = (
+        (seq_idx[:,:-1, None] <= frame_idxs)
+        & (seq_idx[:,1:, None] > frame_idxs)
+    ).float()
+
+    compressed_lens = compressed_lens.cpu()
+    assert compress_matrices.shape[0] == encodedData.shape[0]
+    return compress_matrices, compressed_lens
+
+
+def compress_batch(encodedData, compress_matrices, compressed_lens):
+    ret = torch.bmm(
+        compress_matrices / torch.maximum(compress_matrices.sum(-1, keepdim=True), torch.ones(1, device=compress_matrices.device)), 
+        encodedData)
+    return ret, torch.nn.utils.rnn.pack_padded_sequence(ret, compressed_lens, batch_first=True, enforce_sorted=False)
+
+
+def decompress_padded_batch(compressed_data, compress_matrices, compressed_lens):
+    if isinstance(compressed_data, torch.nn.utils.rnn.PackedSequence):
+        compressed_data, unused_lens = torch.nn.utils.rnn.pad_packed_sequence(
+            compressed_data, batch_first=True, total_length=compress_matrices.size(1))
+    assert (compress_matrices.sum(1) == 1).all()
+    return compressed_data
+    # return torch.bmm(
+    #     compress_matrices.transpose(1, 2), compressed_data)
+
 
 def seDistancesToCentroids(vecs, centroids, doNorm=False):
     

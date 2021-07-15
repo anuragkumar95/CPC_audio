@@ -7,6 +7,7 @@ import torch.nn.functional as F
 import torchaudio
 
 import torch
+from .utils.misc import sequence_segmenter, compress_batch, decompress_padded_batch
 
 ###########################################
 # Networks
@@ -160,6 +161,8 @@ class CPCAR(nn.Module):
                  keepHidden,
                  nLevelsGRU,
                  reductionFactor,
+                 smartPooling,
+                 stepReduction,
                  numLevels,
                  mode="GRU",
                  reverse=False):
@@ -184,20 +187,26 @@ class CPCAR(nn.Module):
         self.reverse = reverse
         self.reductionFactor = reductionFactor
         self.numLevels = numLevels
+        self.smartPooling = smartPooling
+        self.stepReduction = stepReduction
 
     def getDimOutput(self):
         return self.heads[0].hidden_size
 
     def forward(self, x):
-        if x.size(1) % self.reductionFactor != 0:
-            numExtraElements = x.size(1) % self.reductionFactor
-            padValue = torch.repeat_interleave(torch.mean(x[:, -numExtraElements:, :], dim=1).view(-1, 1, x.size(2)), 
-                                                repeats=self.reductionFactor - numExtraElements, dim=1)
-            x = torch.cat((x, padValue), dim=1)
+        # transformedX = []
 
-        assert x.size(1) % self.reductionFactor == 0
+        if not self.smartPooling:
+            if x.size(1) % self.reductionFactor != 0:
+                numExtraElements = x.size(1) % self.reductionFactor
+                padValue = torch.repeat_interleave(torch.mean(x[:, -numExtraElements:, :], dim=1).view(-1, 1, x.size(2)), 
+                                                    repeats=self.reductionFactor - numExtraElements, dim=1)
+                x = torch.cat((x, padValue), dim=1)
+
+            assert x.size(1) % self.reductionFactor == 0
 
         if self.reverse:
+            raise NotImplementedError
             x = torch.flip(x, [1])
         try:
             for head in self.heads:
@@ -214,14 +223,29 @@ class CPCAR(nn.Module):
         hs.append(h)
 
         for l in range(1, self.numLevels):
-            # Random pooling
-            x = x.view(x.size(0), x.size(1) // self.reductionFactor, self.reductionFactor, x.size(2))
-            pickedIdxs = torch.randint(x.size(2), size=(x.size(1),))
-            x = x[:, torch.arange(x.size(1)), pickedIdxs, :]
-            
-            o, h = self.heads[l](x, self.hidden[l])
-            outs.append(o)
-            hs.append(h)
+            if self.smartPooling:
+                compressedMatrices, compressedLens = sequence_segmenter(x, 1 / self.reductionFactor**l, self.stepReduction)
+                paddedCompressedX, packedCompressedX = compress_batch(
+                    x, compressedMatrices, compressedLens
+                )
+                # transformedX.append(packedCompressedX)
+                packedX, packedH = self.heads[l](packedCompressedX, self.hidden[l])
+                o = decompress_padded_batch(packedX, compressedMatrices, compressedLens)
+                outs.append({
+                    'encodedData': paddedCompressedX,
+                    'states': o,
+                    'seqLens': compressedLens
+                })
+                hs.append(packedH)
+            else:
+                # Random uniform pooling
+                x = x.view(x.size(0), x.size(1) // self.reductionFactor, self.reductionFactor, x.size(2))
+                pickedIdxs = torch.randint(x.size(2), size=(x.size(1),))
+                x = x[:, torch.arange(x.size(1)), pickedIdxs, :]
+                
+                o, h = self.heads[l](x, self.hidden[l])
+                outs.append(o)
+                hs.append(h)
 
         if self.keepHidden:
             for l in range(self.numLevels):
@@ -233,6 +257,7 @@ class CPCAR(nn.Module):
         # For better modularity, a sequence's order should be preserved
         # by each module
         if self.reverse:
+            raise NotImplementedError
             for l in range(self.numLevels):
                 outs[l] = torch.flip(outs[l], [1])
         return outs
