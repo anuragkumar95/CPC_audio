@@ -58,8 +58,14 @@ def sequence_segmenter(encodedData, final_length_factor, step_reduction=0.2):
         & (seq_idx[:,1:, None] > frame_idxs)
     ).float()
 
+    print(f"{final_length} -> {len(idx)}")
     compressed_lens = compressed_lens.cpu()
-    assert compress_matrices.shape[0] == encodedData.shape[0]
+    try:
+        assert compress_matrices.shape[0] == encodedData.shape[0]
+    except:
+        print(compress_matrices.shape[0])
+        print(encodedData.shape[0])
+    #     sys.exit(0)
     return compress_matrices, compressed_lens
 
 

@@ -80,6 +80,9 @@ def parseArgs(argv):
                         help="Additionally load nullspace")
     parser.add_argument('--norm_vec_len', action='store_true',
                         help="Normalize vector lengths.")
+    parser.add_argument('--cpcLevel', default=0, type=int,
+                        help='Index of the CPC head at to which extract features. ' 
+                        'Ignored if get_encoded is True.')
     return parser.parse_args(argv)
 
 # some example with nullspace and normalization making choice of closest center cosine-dist:
@@ -222,7 +225,8 @@ def main(argv):
                         gru_level=vars(clustering_args).get('level_gru', None), 
                         get_encoded=clustering_args.encoder_layer, 
                         keep_hidden=args.nobatch,
-                        load_nullspace=args.nullspace)
+                        load_nullspace=args.nullspace,
+                        )
     if clustering_args.dimReduction is not None:
         dimRed = loadDimReduction(clustering_args.dimReduction, clustering_args.centroidLimits)
         featureMaker = torch.nn.Sequential(featureMaker, dimRed)
