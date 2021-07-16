@@ -240,17 +240,21 @@ class CPCUnsupersivedCriterion(BaseCriterion):
         self.stepReduction = stepReduction
         self.rnnMode = rnnMode
 
-    def sampleClean(self, encodedData, windowSize, level):
+    def sampleClean(self, encodedData, windowSizes, maxWindowSize, level):
 
-        batchSize, nNegativeExt, dimEncoded = encodedData.size()
-        outputs = []
+        batchSize, maxPooledLen, dimEncoded = encodedData.size()
 
-        negExt = encodedData.contiguous().view(-1, dimEncoded)
+        #negExt = encodedData.contiguous().view(-1, dimEncoded)
         # Draw nNegativeExt * batchSize negative samples anywhere in the batch
+
         batchIdx = torch.randint(low=0, high=batchSize,
-                                 size=(batchSize, 
-                                       self.negativeSamplingExt * windowSize, ),
+                                 size=(batchSize, maxWindowSize * self.negativeSamplingExt, ),
                                  device=encodedData.device)
+
+        # batchIdx = torch.randint(low=0, high=batchSize,
+        #                          size=(batchSize, 
+        #                                self.negativeSamplingExt * windowSize, ),
+        #                          device=encodedData.device)
         if self.limit_negs_in_batch:
             # sample nagatives from a small set of entries in minibatch
             batchIdx = torch.remainder(batchIdx, self.limit_negs_in_batch)
@@ -263,30 +267,44 @@ class CPCUnsupersivedCriterion(BaseCriterion):
             # if not  ((batchIdx.max().item() < batchSize) and 
             #          (batchIdx.min().item() >= 0)):
             #     import pdb; pdb.set_trace()
-        batchIdx = batchIdx.contiguous().view(-1)
+        batchIdx = batchIdx.contiguous().view(-1, 1)
 
         if self.no_negs_in_match_window:
             idx_low = self.nMatched[level]  # forbid sampling negatives in the prediction window
         else:
             idx_low = 1  # just forbid sampling own index for negative
-        seqIdx = torch.randint(low=idx_low, high=nNegativeExt,
-                               size=(self.negativeSamplingExt
-                                     * windowSize * batchSize, ),
-                               device=encodedData.device)
 
-        baseIdx = torch.arange(0, windowSize, device=encodedData.device)
-        baseIdx = baseIdx.view(1, 1,
-                               windowSize).expand(1,
-                                                  self.negativeSamplingExt,
-                                                  windowSize).expand(batchSize, self.negativeSamplingExt, windowSize)
-        seqIdx += baseIdx.contiguous().view(-1)
-        seqIdx = torch.remainder(seqIdx, nNegativeExt)
+        seqIdx = torch.randint(low=idx_low, high=maxPooledLen,
+                                        size=(batchSize * maxWindowSize* self.negativeSamplingExt, 1),
+                                        device=encodedData.device)
 
-        extIdx = seqIdx + batchIdx * nNegativeExt
-        negExt = negExt[extIdx].view(batchSize, self.negativeSamplingExt,
-                                     windowSize, dimEncoded)
+        compressedLens = windowSizes + self.nMatched[level]
+        seqLens = compressedLens[batchIdx]
+        seqIdx = torch.remainder(seqIdx, seqLens.view(-1, 1).cuda())
+        sampledNegs = encodedData[batchIdx, seqIdx, :].contiguous().view(-1, dimEncoded).view(batchSize, maxWindowSize, 
+                                                                                            self.negativeSamplingExt, dimEncoded)
+        # sampledNegs = torch.nn.utils.rnn.pack_padded_sequence(
+        #         negExt, windowSizes - self.nMatched[level], batch_first=True, enforce_sorted=False
+        #     )
+
+        # seqIdx = torch.randint(low=idx_low, high=nNegativeExt,
+        #                        size=(self.negativeSamplingExt
+        #                              * windowSize * batchSize, ),
+        #                        device=encodedData.device)
+
+        # baseIdx = torch.arange(0, windowSize, device=encodedData.device)
+        # baseIdx = baseIdx.view(1, 1,
+        #                        windowSize).expand(1,
+        #                                           self.negativeSamplingExt,
+        #                                           windowSize).expand(batchSize, self.negativeSamplingExt, windowSize)
+        # seqIdx += baseIdx.contiguous().view(-1)
+        # seqIdx = torch.remainder(seqIdx, nNegativeExt)
+
+        # extIdx = seqIdx + batchIdx * nNegativeExt
+        # negExt = negExt[extIdx].view(batchSize, self.negativeSamplingExt,
+        #                              windowSize, dimEncoded)
         
-        return negExt
+        return sampledNegs
         
         # labelLoss = torch.zeros((batchSize * windowSize),
         #                         dtype=torch.long,
@@ -314,7 +332,8 @@ class CPCUnsupersivedCriterion(BaseCriterion):
         # sampledData, labelLoss = self.sampleClean(encodedData, windowSize)
         # negatives: BS x Len x NumNegs x D
         # sampledNegs = self.sampleClean(encodedData, windowSize, level).permute(0, 2, 1, 3)
-        sampledNegs = torch.randn(size=(batchSize, maxWindowSize, self.negativeSamplingExt, cFeature.size(2))).cuda()
+        sampledNegs = self.sampleClean(encodedData, windowSizes, maxWindowSize, level)
+        #sampledNegs = torch.randn(size=(batchSize, maxWindowSize, self.negativeSamplingExt, cFeature.size(2))).cuda()
 
         if self.speakerEmb is not None:
             l_ = label.view(batchSize, 1).expand(batchSize, maxWindowSize)
