@@ -6,6 +6,7 @@ import torch
 import torch.nn as nn
 from .seq_alignment import collapseLabelChain
 from .custom_layers import EqualizedLinear, EqualizedConv1d
+from ..utils.misc import levenshteinDistance
 
 
 class FFNetwork(nn.Module):
@@ -390,10 +391,17 @@ class CTCPhoneCriterion(BaseCriterion):
         B, S, H = cFeature.size()
         predictions = self.getPrediction(cFeature)
         label = label.to(predictions.device)
-        label,  sizeLabels = collapseLabelChain(label)
+        label, sizeLabels = collapseLabelChain(label)
+
+        predictions = torch.nn.functional.log_softmax(predictions, dim=2)
+        predictedPhones = predictions.max(2)[1].detach().cpu()
+        predictedPhones, sizePredictions = collapseLabelChain(predictedPhones)
 
         avgPER = 0.
-        predictions = torch.nn.functional.log_softmax(predictions, dim=2)
+        for i in range(B):
+            avgPER += levenshteinDistance(predictedPhones[i, :sizePredictions[i]], label[i, :sizeLabels[i]].cpu())
+        avgPER /= B
+
         predictions = predictions.permute(1, 0, 2)
         targetSizePred = torch.ones(B, dtype=torch.int64,
                                     device=predictions.device) * S

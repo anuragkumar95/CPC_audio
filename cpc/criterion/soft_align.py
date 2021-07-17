@@ -340,7 +340,7 @@ class CPCUnsupersivedCriterion(BaseCriterion):
             embeddedSpeaker = self.speakerEmb(l_)
             cFeature = torch.cat([cFeature, embeddedSpeaker], dim=2)
 
-        if self.rnnMode == 'transformer' and self.smartPooling:
+        if self.rnnMode == 'transformer' and self.smartPooling and level > 0:
             cFeature = F.pad(cFeature, (0, 0, 0, self.maxSizeInputSeq - cFeature.size(1)))
         # Predictions, BS x Len x D x nPreds
         predictions = self.wPredictions[level](cFeature)[:, :maxWindowSize, :, :]
@@ -415,7 +415,7 @@ class CPCUnsupersivedCriterion(BaseCriterion):
         outLossesD = outLosses.detach()
         losses = losses.mean() / outLossesD.sum() * outLossesD
 
-        return losses, outAcc, torch.split(aligns, windowSizes.tolist()), predictions, paddedLogScores
+        return losses, outAcc, torch.split(aligns, windowSizes.tolist()) if self.smartPooling else aligns, predictions, paddedLogScores
         
     def forward(self, cFeatures, encodedData, label, captureOptions=None):
 
