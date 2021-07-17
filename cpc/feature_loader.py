@@ -270,14 +270,20 @@ def get_module(i_module):
     return i_module
 
 
-def save_checkpoint(model_state, criterion_state, optimizer_state, best_state, segmentCostModel,
+def save_checkpoint(model_state, criterion_state, optimizer_state, best_state, segmentCostModel, centerModel,
                     path_checkpoint):
+
+    if centerModel is not None:
+        centroids = centerModel.centersForSave()
+    else:
+        centroids = None
 
     state_dict = {"gEncoder": model_state,
                   "cpcCriterion": criterion_state,
                   "optimizer": optimizer_state,
                   "best": best_state,
-                  "segmentCostModel": segmentCostModel}
+                  "segmentCostModel": segmentCostModel,
+                  "centroids": centroids}  # centroids added later, can be missing in some checkpoints using them
 
     torch.save(state_dict, path_checkpoint)
 

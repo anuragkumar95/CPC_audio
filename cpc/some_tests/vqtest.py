@@ -1,4 +1,7 @@
 
+# [!!] old test for centroid denoising with replacing with weighted avg of a point and the center
+#      unused, now this test can be not updated and not working
+
 
 from cpc.model import CPCModel
 from copy import deepcopy
@@ -137,7 +140,7 @@ print("---")
 pushLoss, closestCountsDataPar, c_feature, encoded_data = \
     CPCmodel6(c_feature, encoded_data, c_feature, encoded_data, centers2, 
               (3,5), True, False)
-# this one is tricky! whould push last points in lines in cosine way,
+# this one is tricky! should push last points in lines in cosine way,
 # from y/x = 1.2 to: 1.3 (enc, 1 center weight), 1.25 (ctx, 0.5 center weight)
 # as the closest center has 1.3 ratio
 print(encoded_data)

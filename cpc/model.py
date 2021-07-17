@@ -287,6 +287,8 @@ class BiDIRAR(nn.Module):
 ###########################################
 
 def seDistancesToCentroids(vecs, centroids, doNorm=False, debug=False):
+    if debug:
+        t0 = time.time()
     if len(vecs.shape) == 2:
         vecs = vecs.view(1, *(vecs.shape))
     B = vecs.shape[0]
@@ -295,10 +297,10 @@ def seDistancesToCentroids(vecs, centroids, doNorm=False, debug=False):
     # vecs: B x L x Dim
     # centroids: k x Dim
     if doNorm:
-        vecLengths = torch.sqrt((vecs*vecs).sum(-1))
-        vecs = vecs / vecLengths.view(B, N, 1)
-        centrLengths = torch.sqrt((centroids*centroids).sum(-1))
-        centroids = centroids / centrLengths.view(k, 1)
+        vecLengths = torch.sqrt(torch.clamp((vecs*vecs).sum(-1), min=0))
+        vecs = vecs / torch.clamp(vecLengths.view(B, N, 1), min=0.000000000001)
+        centrLengths = torch.sqrt(torch.clamp((centroids*centroids).sum(-1), min=0))
+        centroids = centroids / torch.clamp(centrLengths.view(k, 1), min=0.000000000001)
         if debug:
             print("vecLengths", vecLengths.shape, vecLengths)
             print("centrLengths", centrLengths.shape, centrLengths)
@@ -307,7 +309,9 @@ def seDistancesToCentroids(vecs, centroids, doNorm=False, debug=False):
     res = torch.square(centroids).sum(1).view(1, 1, -1) + torch.square(vecs).sum(-1).view(B, N, 1) \
         - 2*(vecs.view(B, N, 1, -1) * centroids.view(1, 1, k, -1)).sum(-1)  
     if debug:
-        print("res", res.shape, res)
+        print("seDistancesToCentroids res", res.shape, res)
+        t1 = time.time()
+        print(f"seDistancesToCentroids calc time: {t1-t0}")
     return res
 
 
@@ -651,17 +655,17 @@ class CPCModel(nn.Module):
                     
 
         if self.pushLossProtosMult is None:  
-            distsSq = seDistancesToCentroids(points, centers)
+            distsSq = seDistancesToCentroids(points, centers, debug=self.modDebug)
             distsSq = torch.clamp(distsSq, min=0)
             dists = torch.sqrt(distsSq)  
         else:  # only to be used with protos, not with online k-means
             # VQ-VAE-commitment-loss-weight - like
             assert pushLossWeight is not None
 
-            distsSq1 = seDistancesToCentroids(points, centers.clone().detach())
+            distsSq1 = seDistancesToCentroids(points, centers.clone().detach(), debug=self.modDebug)
             distsSq1 = torch.clamp(distsSq1, min=0)
             dists1 = torch.sqrt(distsSq1)  
-            distsSq2 = seDistancesToCentroids(points.clone().detach(), centers)
+            distsSq2 = seDistancesToCentroids(points.clone().detach(), centers, debug=self.modDebug)
             distsSq2 = torch.clamp(distsSq2, min=0)
             dists2 = torch.sqrt(distsSq2)
             # just sum distances, as later only linear stuff on this is made to obtain loss

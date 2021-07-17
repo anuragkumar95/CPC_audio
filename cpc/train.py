@@ -182,18 +182,26 @@ def trainStep(dataLoader,
         if segmentCostModel is not None and batchData.shape[0] == normalBatchSize:  # avoiding updating with smaller batches as would spoil average segm number stats
             segmentCostModel.batchUpdate(batchAimCostSegmTens, batchActualKTens)
         if centerModel is not None:
+            if debug:
+                t0 = time.time()
             centerUpdateRes = centerModel.encodingsBatchUpdate(encoded_data, epochNrs, cpcModel, label=labelPhone)
             if debug:
+                t1 = time.time()
                 print(f"! -> centerUpdate is None: {centerUpdateRes is None}")
             if centerUpdateRes is None:
                 centerUpdateRes = {}
             DM = centerModel.getDM(epochNr)
+            if debug:
+                t2 = time.time()
+                print(f"centerModel whole update times: encodingsBatchUpdate {t1-t0}, getDM {t2-t1}")
         else:
             centerUpdateRes = {}
             DM = None
         # [!] baseEncDim returned (in tensor) if push loss
 
         if pushLoss is not None:  
+            if debug:
+                t0 = time.time()
             baseEncDim = pushLoss[0].item()
             c_feature1 = c_feature.clone()
             c_feature2 = c_feature.clone()
@@ -201,6 +209,8 @@ def trainStep(dataLoader,
             c_feature = c_feature1
             pushLoss, closestCountsDataPar, c_feature, encoded_data = \
                 cpcModel(c_feature, encoded_data, c_feature2, encoded_data2, givenCenters, epochNrs, True, False)
+            if debug:
+                print(f"pushLoss calc whole time: {t1-t0}")
             closestCounts = closestCountsDataPar.sum(dim=0).view(-1)
             c_feature.retain_grad()  # grad can be retained after possible VQ-VAE, as grad is copied anyway with detach-some-stuff trick
             c_feature2.retain_grad()
@@ -599,7 +609,8 @@ def run(trainDataset,
 
             fl.save_checkpoint(modelStateDict, criterionStateDict,
                             optimizer.state_dict(), bestStateDict,
-                            segmentCostModel, f"{pathCheckpoint}_{epoch}.pt")
+                            segmentCostModel, centerModel,
+                            f"{pathCheckpoint}_{epoch}.pt")
             utils.save_logs(logs, pathCheckpoint + "_logs.json")
 
 
@@ -914,8 +925,8 @@ def main(args):
         cpcModel = model.CPCModel(encoderNet, arNet, args.batchSizeGPU, modSettings=modSettings)
 
         CPChiddenGar, CPChiddenEncoder = cpcModel.gAR.getDimOutput(), cpcModel.gEncoder.getDimOutput()
-    # TODO(?) saving, loading, stuff for centerModel - now it is not saved, would reinit centers when continuing train etc
-    #     but also ^ would need to take much memory as sum of batch representations in remembered for many batches (all memory)
+    # for centerModel only saving centers as would need to save batch audio and batch stats for the whole memory
+    # so, not resuming and not loading center model as centroids are not enough
     if centerInitSettings is not None:
         centerModel = center_model.CentroidModule(centerInitSettings)
     else:
