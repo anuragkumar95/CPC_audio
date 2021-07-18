@@ -27,7 +27,7 @@ def levenshteinDistance(s1, s2):
         distances = distances_
     return distances[-1]
 
-def sequence_segmenter(encodedData, final_length_factor, step_reduction=0.2):
+def sequence_segmenter(encodedData, final_length_factor, minLengthSeq, step_reduction=0.2):
     assert not torch.isnan(encodedData).any()
     device = encodedData.device
     encFlat = F.pad(encodedData.reshape(-1, encodedData.size(-1)).detach(), (0, 0, 1, 0))
@@ -53,14 +53,30 @@ def sequence_segmenter(encodedData, final_length_factor, step_reduction=0.2):
         idx = idx.index_select(0, keep_idx)
     
     # Ensure that minibatch boundaries are preserved
-    seq_end_idx = torch.arange(0, encodedData.size(0)*encodedData.size(1), encodedData.size(1), device=device)
+    seq_end_idx = torch.arange(0, encodedData.size(0)*encodedData.size(1) + 1, encodedData.size(1), device=device)
     idx = torch.unique(torch.cat((idx, seq_end_idx)), sorted=True)
 
     # now work out cut indices in each minibatch element
-    batch_elem_idx = idx // encodedData.size(1)
-    transition_idx = F.pad(torch.nonzero(batch_elem_idx[1:] != batch_elem_idx[:-1]), (0,0, 1,0))
-    cutpoints = (torch.nonzero((idx % encodedData.size(1)) == 0))
+    # batch_elem_idx = idx // encodedData.size(1)
+    # transition_idx = F.pad(torch.nonzero(batch_elem_idx[1:] != batch_elem_idx[:-1]), (0,0, 1,0))
+    cutpoints = torch.nonzero((idx % encodedData.size(1)) == 0)
     compressed_lens = (cutpoints[1:]-cutpoints[:-1]).squeeze(1)
+    # Handling case when there are sequences shorter than nPredict + 1
+    tooShortBatchIdx = torch.where(compressed_lens < minLengthSeq)[0]
+    if len(tooShortBatchIdx) > 0:
+        for i in tooShortBatchIdx:
+            # How many sequence elements are we missing to be able to predict
+            cuts2Add = minLengthSeq - compressed_lens[i]
+            # We add them by splitting the largest segments in the sequence in two equal parts
+            for j in range(cuts2Add):
+                segmentsBoundaries = idx[cutpoints[i]:cutpoints[i + 1] + 1 + j]
+                largestSegmentIdx = torch.diff(segmentsBoundaries).max(0)[1]
+                idx = torch.cat((idx[:cutpoints[i] + largestSegmentIdx + 1], 
+                                torch.round((segmentsBoundaries[largestSegmentIdx] + segmentsBoundaries[largestSegmentIdx + 1]) / 2).int().unsqueeze(0), 
+                                idx[cutpoints[i] + largestSegmentIdx + 1:]))
+            cutpoints[i + 1:] += cuts2Add
+        cutpoints = torch.nonzero((idx % encodedData.size(1)) == 0)
+        compressed_lens = (cutpoints[1:]-cutpoints[:-1]).squeeze(1)
 
     seq_idx = torch.nn.utils.rnn.pad_sequence(
         torch.split(idx[1:] % encodedData.size(1), tuple(cutpoints[1:]-cutpoints[:-1])), batch_first=True)
@@ -73,32 +89,27 @@ def sequence_segmenter(encodedData, final_length_factor, step_reduction=0.2):
         & (seq_idx[:,1:, None] > frame_idxs)
     ).float()
 
-    print(f"{final_length} -> {len(idx)}")
     compressed_lens = compressed_lens.cpu()
-    try:
-        assert compress_matrices.shape[0] == encodedData.shape[0]
-    except:
-        print(compress_matrices.shape[0])
-        print(encodedData.shape[0])
-    #     sys.exit(0)
+    assert compress_matrices.shape[0] == encodedData.shape[0]
     return compress_matrices, compressed_lens
 
 
-def compress_batch(encodedData, compress_matrices, compressed_lens):
+def compress_batch(encodedData, compress_matrices, compressed_lens, pack=False):
     ret = torch.bmm(
         compress_matrices / torch.maximum(compress_matrices.sum(-1, keepdim=True), torch.ones(1, device=compress_matrices.device)), 
         encodedData)
-    return ret, torch.nn.utils.rnn.pack_padded_sequence(ret, compressed_lens, batch_first=True, enforce_sorted=False)
+    if pack:
+        ret = torch.nn.utils.rnn.pack_padded_sequence(ret, compressed_lens, batch_first=True, enforce_sorted=False)
+    return ret
 
 
-def decompress_padded_batch(compressed_data, compress_matrices, compressed_lens):
+def decompress_padded_batch(compressed_data, compress_matrices):
     if isinstance(compressed_data, torch.nn.utils.rnn.PackedSequence):
-        compressed_data, unused_lens = torch.nn.utils.rnn.pad_packed_sequence(
-            compressed_data, batch_first=True, total_length=compress_matrices.size(1))
+        # We pad to have the maximum possible sequence length so as to be compatible with multi GPU setup
+        compressed_data, _ = torch.nn.utils.rnn.pad_packed_sequence(
+            compressed_data, batch_first=True, total_length=compress_matrices.size(2))
     assert (compress_matrices.sum(1) == 1).all()
     return compressed_data
-    # return torch.bmm(
-    #     compress_matrices.transpose(1, 2), compressed_data)
 
 
 def seDistancesToCentroids(vecs, centroids, doNorm=False):

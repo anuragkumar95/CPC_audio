@@ -399,7 +399,7 @@ class CTCPhoneCriterion(BaseCriterion):
 
         avgPER = 0.
         for i in range(B):
-            avgPER += levenshteinDistance(predictedPhones[i, :sizePredictions[i]], label[i, :sizeLabels[i]].cpu())
+            avgPER += levenshteinDistance(predictedPhones[i, :sizePredictions[i]], label[i, :sizeLabels[i]].cpu()) / sizeLabels[i]
         avgPER /= B
 
         predictions = predictions.permute(1, 0, 2)

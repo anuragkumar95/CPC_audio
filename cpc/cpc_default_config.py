@@ -39,6 +39,7 @@ def set_default_cpc_config(parser):
 
     group.add_argument('--CPCCTCNumLevels', type=int, default=2)
     group.add_argument('--CPCCTCReductionFactor', type=int, default=4)
+    group.add_argument('--headWeights', type=float, nargs="+", default=[1.0, 1.0])
     group.add_argument('--smartPooling', action='store_true')
     group.add_argument('--stepReduction', type=float, default=0.2)
 

@@ -98,7 +98,8 @@ def trainStep(dataLoader,
               cpcCriterion,
               optimizer,
               scheduler,
-              loggingStep):
+              loggingStep,
+              headWeights):
 
     cpcModel.train()
     cpcCriterion.train()
@@ -116,8 +117,8 @@ def trainStep(dataLoader,
         c_feature, encoded_data, label = cpcModel(batchData, label)
         allLosses, allAcc, _ = cpcCriterion(c_feature, encoded_data, label, None)
         totLoss = 0
-        for loss in allLosses:
-            totLoss += loss.mean()
+        for i, loss in enumerate(allLosses):
+            totLoss += headWeights[i] * loss.mean()
         totLoss = totLoss / len(allLosses)
         totLoss.backward()
 
@@ -302,7 +303,8 @@ def run(trainDataset,
         pathCheckpoint,
         optimizer,
         scheduler,
-        logs):
+        logs,
+        headWeights):
 
     startEpoch = len(logs["epoch"])
     print(f"Running {nEpoch} epochs, now at {startEpoch}")
@@ -340,7 +342,7 @@ def run(trainDataset,
             (len(trainLoader), len(valLoader), batchSize))
 
         locLogsTrain = trainStep(trainLoader, cpcModel, cpcCriterion,
-                                optimizer, scheduler, logs["logging_step"])
+                                optimizer, scheduler, logs["logging_step"], headWeights)
 
         locLogsVal = valStep(valLoader, cpcModel, cpcCriterion)
 
@@ -808,7 +810,8 @@ def main(args):
             args.pathCheckpoint,
             optimizer,
             scheduler,
-            logs)
+            logs,
+            args.headWeights)
     if args.onlyCapture:  
     # caution [!] - will capture for last checkpoint (last saved state) if checkpoint directory given
     #               to use specific checkpoint provide full checkpoint file path

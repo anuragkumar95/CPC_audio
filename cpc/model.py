@@ -164,6 +164,7 @@ class CPCAR(nn.Module):
                  smartPooling,
                  stepReduction,
                  numLevels,
+                 minLengthSeqMinusOne,
                  mode="GRU",
                  reverse=False):
 
@@ -189,6 +190,7 @@ class CPCAR(nn.Module):
         self.numLevels = numLevels
         self.smartPooling = smartPooling
         self.stepReduction = stepReduction
+        self.minLengthSeqMinusOne = minLengthSeqMinusOne
 
     def getDimOutput(self):
         return self.heads[0].hidden_size
@@ -224,17 +226,18 @@ class CPCAR(nn.Module):
 
         for l in range(1, self.numLevels):
             if self.smartPooling:
-                compressedMatrices, compressedLens = sequence_segmenter(x, 1 / self.reductionFactor**l, self.stepReduction)
-                paddedCompressedX, packedCompressedX = compress_batch(
-                    x, compressedMatrices, compressedLens
+                minLengthSeq = max(1, int(round(2* self.minLengthSeqMinusOne / self.reductionFactor**l))) + 1
+                compressedMatrices, compressedLens = sequence_segmenter(x, 1 / self.reductionFactor**l, minLengthSeq, self.stepReduction)
+                packedCompressedX = compress_batch(
+                    x, compressedMatrices, compressedLens, pack=True
                 )
                 # transformedX.append(packedCompressedX)
                 packedX, packedH = self.heads[l](packedCompressedX, self.hidden[l])
-                o = decompress_padded_batch(packedX, compressedMatrices, compressedLens)
+                o = decompress_padded_batch(packedX, compressedMatrices)
                 outs.append({
-                    'encodedData': paddedCompressedX,
+                    'encodedData': decompress_padded_batch(packedCompressedX, compressedMatrices),
                     'states': o,
-                    'seqLens': compressedLens
+                    'seqLens': compressedLens.cuda()
                 })
                 hs.append(packedH)
             else:

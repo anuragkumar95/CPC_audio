@@ -172,7 +172,8 @@ def getAR(args):
                       numLevels=args.CPCCTCNumLevels, 
                       reductionFactor=args.CPCCTCReductionFactor, 
                       smartPooling=args.smartPooling,
-                      stepReduction=args.stepReduction)
+                      stepReduction=args.stepReduction,
+                      minLengthSeqMinusOne=args.CPCCTCNumMatched)
     return arNet
 
 

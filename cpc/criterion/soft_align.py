@@ -194,14 +194,14 @@ class CPCUnsupersivedCriterion(BaseCriterion):
         self.loss_temp = loss_temp
         self.nMatched = [nMatched]
         self.no_negs_in_match_window = no_negs_in_match_window
-        self.maxSizeInputSeq = sizeInputSeq - nMatched
+        self.maxSizeInputSeq = sizeInputSeq
         self.wPredictions = nn.ModuleList()
         self.wPredictions.append(PredictionNetwork(nPredicts, dimOutputAR, dimOutputEncoder, rnnMode=rnnMode, dropout=dropout, 
-                                                   sizeInputSeq=self.maxSizeInputSeq))
+                                                   sizeInputSeq=self.maxSizeInputSeq - nMatched))
         for l in range(1, numLevels):
             nMatched = max(1, int(round(2* nMatched / reductionFactor)))
             self.wPredictions.append(PredictionNetwork(nMatched, dimOutputAR, dimOutputEncoder, rnnMode=rnnMode, dropout=dropout, 
-                                                        sizeInputSeq=self.maxSizeInputSeq if smartPooling else sizeInputSeq // (reductionFactor ** l) - nMatched))
+                                                        sizeInputSeq=self.maxSizeInputSeq - nMatched if smartPooling else sizeInputSeq // (reductionFactor ** l) - nMatched))
             self.nMatched.append(nMatched)
         self.learn_blank = learn_blank
         if learn_blank:
@@ -327,6 +327,7 @@ class CPCUnsupersivedCriterion(BaseCriterion):
     def applyCPCHead(self, cFeature, encodedData, label, windowSizes, level):
         maxWindowSize = torch.max(windowSizes)
         cFeature = cFeature[:, :maxWindowSize]
+        encodedData = encodedData[:, :maxWindowSize + self.nMatched[level]]
         batchSize = cFeature.size(0)
 
         # sampledData, labelLoss = self.sampleClean(encodedData, windowSize)
@@ -341,7 +342,7 @@ class CPCUnsupersivedCriterion(BaseCriterion):
             cFeature = torch.cat([cFeature, embeddedSpeaker], dim=2)
 
         if self.rnnMode == 'transformer' and self.smartPooling and level > 0:
-            cFeature = F.pad(cFeature, (0, 0, 0, self.maxSizeInputSeq - cFeature.size(1)))
+            cFeature = F.pad(cFeature, (0, 0, 0, self.maxSizeInputSeq - self.nMatched[level] - cFeature.size(1)))
         # Predictions, BS x Len x D x nPreds
         predictions = self.wPredictions[level](cFeature)[:, :maxWindowSize, :, :]
         nPredicts = len(self.wPredictions[level].predictors)
@@ -349,9 +350,11 @@ class CPCUnsupersivedCriterion(BaseCriterion):
         extra_preds = []
 
         if self.learn_blank:
+            raise NotImplementedError
             extra_preds.append(self.blank_proto.expand(batchSize, maxWindowSize, self.blank_proto.size(2), 1))
 
         if self.predict_self_loop:
+            raise NotImplementedError
             # old and buggy
             # extra_preds.append(cFeature.unsqueeze(-1))
             # new and shiny
