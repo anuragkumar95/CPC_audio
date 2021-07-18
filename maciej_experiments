@@ -6,15 +6,15 @@ python /pio/scratch/2/i325922/CPC_audio/cpc/criterion/clustering/clustering_scri
     /pio/scratch/2/i323106/wav2vec/runs/cpc/acpc-hierarchical-uniformpooling4_2/checkpoint_49.pt \
     /pio/scratch/2/i323106/wav2vec/runs/cpc/acpc-hierarchical-uniformpooling4_2/kmeans/unipool4_2_kmeans50.pt
 
-
-# audio-quantization - LibriSpeech
+######### QUANTIZATIONS #########
+# LibriSpeech
 python /pio/scratch/2/i323106/CPC_audio/scripts/quantize_audio.py \
     /pio/scratch/2/i323106/wav2vec/runs/cpc/acpc-hierarchical-uniformpooling4_2/kmeans/unipool4_2_kmeans50.pt \
     /pio/data/zerospeech2021/LibriSpeech-wav/train-clean-100/ \
     /pio/scratch/2/i325922/wav2vec/runs/cpc/acpc-hierarchical-uniformpooling4_2/quantized/LibriSpeech-wav/train-clean-100/ \
     --file_extension wav
 
-# audio-quantization - lexical dev
+# lexical dev
 python /pio/scratch/2/i323106/CPC_audio/scripts/quantize_audio.py \
     /pio/scratch/2/i323106/wav2vec/runs/cpc/acpc-hierarchical-uniformpooling4_2/kmeans/unipool4_2_kmeans50.pt \
     /pio/data/zerospeech2021/dataset/lexical/dev/ \
@@ -22,7 +22,7 @@ python /pio/scratch/2/i323106/CPC_audio/scripts/quantize_audio.py \
     --file_extension wav
 
 
-# audio-quantization - lexical test
+# lexical test
 python /pio/scratch/2/i323106/CPC_audio/scripts/quantize_audio.py \
     /pio/scratch/2/i323106/wav2vec/runs/cpc/acpc-hierarchical-uniformpooling4_2/kmeans/unipool4_2_kmeans50.pt \
     /pio/data/zerospeech2021/dataset/lexical/test/ \
@@ -31,3 +31,27 @@ python /pio/scratch/2/i323106/CPC_audio/scripts/quantize_audio.py \
 
 bash train_ls100.sh --pathCheckpoint /pio/scratch/2/i325922/wav2vec/runs/cpc/testing --CPCCTCReductionFactor 4 \
     --smartPooling --debug --nPredicts 1 --CPCCTCNumMatched 1
+
+
+######### SIMI #########
+
+# Segmentation
+# run sentencepiece on given trainset, then using learnt language model we try to predict the best segmentation. There are two ways of doing so:
+# - use sentencepiece's default segmentation (by default), but it's bad because our language is not very "exact" - some pseudophones (output of the CPC+clustering) may be mismatched
+# - use viterbi segmentation (flag --viterbi). It takes errors into account, and it usually gives lower PER.
+# To get the description of parameters run: python segmentation.py --help.
+
+ bash /pio/scratch/2/i325922//simi/segmentation/run.sh \
+    Path to the quantized trainset for sentencepiece \
+    /pio/scratch/2/i325922/wav2vec/runs/cpc/acpc-hierarchical-uniformpooling4_2/quantized/LibriSpeech-wav/train-clean-100 \  # Path to the quantized dataset, which is to be segmented
+    Sentencepiece's vocabulary size \
+    /pio/scratch/2/i325922/wav2vec/runs/cpc/acpc-hierarchical-uniformpooling4_2/segmentation/ Output folder
+
+# Scoring
+# We compute the PER (Phone Error Rate) of a clusterization by greedy-mapping every sentence piece to a most frequent ground-truth phone. 
+# Then we do a greedy alignment, and compute the mismatch error rate.
+
+bash /pio/scratch/2/i325922//simi/scoring/run.sh \ 
+    /pio/data/zerospeech2021/librispeech_alignments/train-clean-100 \ # path to the ground-truth segmentation, eg.: 
+    /pio/scratch/2/i325922/wav2vec/runs/cpc/acpc-hierarchical-uniformpooling4_2/quantized/LibriSpeech-wav/train-clean-100 \ # path to the segmentation you want to rate 
+    0 # offset in number of frames, in most cases it should be 0
