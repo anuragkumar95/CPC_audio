@@ -5,10 +5,11 @@ import sys
 from shutil import copyfile
 import tqdm
 import numpy as np
+import buckeye
 import torchaudio
 
 
-def processDataset(audioFiles, outPath, split, phonesDict):
+def processDataset(audioFiles, outPath, split, phonesDict, dataset='timit'):
     """
     List audio files and transcripts for a certain partition of TIMIT dataset.
     Args:
@@ -25,17 +26,32 @@ def processDataset(audioFiles, outPath, split, phonesDict):
         trackName = os.path.basename(wavFile)
         speakerDir = os.path.join(outPath, split, speakerName)
         os.makedirs(speakerDir, exist_ok=True)
-        labelsFile = wavFile[:-4] + '.PHN'
-        with open(labelsFile) as fileReader:
-            rawTimitLabel = fileReader.readlines()
+        if dataset == 'timit':
+            labelsFile = wavFile[:-4] + '.PHN'
+            with open(labelsFile) as fileReader:
+                rawLabels = fileReader.readlines()
+        elif dataset == 'buckeye':
+            filepath = wavFile.split(".")[0]
+            considered_track = buckeye.Track(name=trackName[:-4],
+                                            words=filepath + '.words',
+                                            phones=filepath + '.phones',
+                                            log=filepath + '.log',
+                                            txt=filepath + '.txt',
+                                            wav=wavFile)
+            rawLabels = considered_track.phones
         fileWriter.write(speakerName + '-' + trackName[:-4])
         intervals2Keep = np.arange(waveData.size(1))
-        for l in rawTimitLabel:
-            t0, t1, phoneCode = l.strip().split()
+        for l in rawLabels:
+            if dataset == 'timit':
+                t0, t1, phoneCode = l.strip().split()  
+            elif dataset == 'buckeye':
+                t0, t1, phoneCode = l.beg, l.end, l.seg
+                t0 *= samplingRate
+                t1 *= samplingRate
             t0 = int(t0)
             t1 = int(t1)
             phoneDuration = t1 - t0
-            if phoneCode in ['pau', 'epi', '1', '2', 'h#']:
+            if phoneCode in ['pau', 'epi', '1', '2', 'h#'] or phoneCode.isupper():
                 phoneCode = str(phonesDict[phoneCode])
                 nonSpeech2Keep = min(320, t1 - t0)
                 intervals2Keep = intervals2Keep[~np.isin(intervals2Keep, np.arange(t0 + nonSpeech2Keep, t1 + 1))]
@@ -72,23 +88,34 @@ def parse_args(argv):
                         'files')
     parser.add_argument("--pathOut", type=str,
                         help='Path out the output directory')
+    parser.add_argument("--dataset", type=str,
+                        help='The dataset to be processed, namely timit or buckeye')
     return parser.parse_args(argv)
 
 
 def main(argv):
     args = parse_args(argv)
     os.makedirs(args.pathOut, exist_ok=True)
-    phonesDict = getPhonesDict(os.path.join(args.pathDB, 'DOC', 'PHONCODE.DOC'))
-    
-    audioFilesTrain = glob.glob(os.path.join(args.pathDB, "TRAIN/**/*.WAV"), recursive=True)
+    if args.dataset == 'timit':
+        phonesDict = getPhonesDict(os.path.join(args.pathDB, 'DOC', 'PHONCODE.DOC'))
+    elif args.dataset == 'buckeye':
+        # sadly no lookup file available
+        phones = "aa ae ay aw ao oy ow eh ey er ah uw uh ih iy m n en \
+            ng l el t d ch jh th dh sh zh s z k g p b f v w hh y r \
+            dx nx tq er em Vn SIL NOISE VOCNOISE {B_TRANS} {E_TRANS} \
+            IVER LAUGH CUTOFF ERROR B_THIRD_SPKR E_THIRD_SPKR UNKNOWN"
+        phonesDict = {i+1: j for i, j in enumerate(phones.split())}
+
+    ext = ".WAV" if args.dataset =='timit' else ".wav"
+    audioFilesTrain = glob.glob(os.path.join(args.pathDB, "TRAIN/**/*" + ext), recursive=True)
     open(os.path.join(args.pathOut, 'converted_aligned_phones.txt'), "w").close()
     print("Creating train set")
-    processDataset(audioFilesTrain, args.pathOut, 'train', phonesDict)
+    processDataset(audioFilesTrain, args.pathOut, 'train', phonesDict, args.dataset)
     print("Train set ready!")
     
-    audioFilesTest = glob.glob(os.path.join(args.pathDB, "TEST/**/*.WAV"), recursive=True)
+    audioFilesTest = glob.glob(os.path.join(args.pathDB, "TEST/**/*" + ext), recursive=True)
     print("Creating test set")
-    processDataset(audioFilesTest, args.pathOut, 'test', phonesDict)
+    processDataset(audioFilesTest, args.pathOut, 'test', phonesDict, args.dataset)
     print("Test set ready!")
     print ("Data preparation is complete !")
 

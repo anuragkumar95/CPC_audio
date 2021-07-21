@@ -50,7 +50,8 @@ def main(argv):
     # sadly no lookup file available
     phones = "aa ae ay aw ao oy ow eh ey er ah uw uh ih iy m n en \
             ng l el t d ch jh th dh sh zh s z k g p b f v w hh y r \
-            dx nx tq er em Vn"
+            dx nx tq er em Vn SIL NOISE VOCNOISE {B_TRANS} {E_TRANS} \
+            IVER LAUGH CUTOFF ERROR B_THIRD_SPKR E_THIRD_SPKR UNKNOWN"
 
     phonesDict = {i+1: j for i, j in enumerate(phones.split())}
     print(phonesDict)
