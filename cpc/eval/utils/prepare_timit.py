@@ -58,7 +58,12 @@ def processDataset(audioFiles, outPath, split, phonesDict, dataset='timit'):
                 subSampledNonSpeech2Keep = int(nonSpeech2Keep * 100 / samplingRate)
                 fileWriter.write((' ' + phoneCode) * subSampledNonSpeech2Keep)
             else:
-                phoneCode = str(phonesDict[phoneCode])
+                try:
+                    phoneCode = str(phonesDict[phoneCode])
+                except KeyError:
+                    print(f"Encountered phoneme {phoneCode} not included in the Buckeye corpus manual...")
+                    phonesDict[phoneCode] = len(phonesDict.keys())
+                    phoneCode = str(phonesDict[phoneCode])
                 subSampledPhoneDuration = int(phoneDuration * 100 / samplingRate)
                 fileWriter.write((' ' + phoneCode) * subSampledPhoneDuration)
         waveData = waveData[:, intervals2Keep].view(1, -1)
@@ -100,12 +105,12 @@ def main(argv):
         phonesDict = getPhonesDict(os.path.join(args.pathDB, 'DOC', 'PHONCODE.DOC'))
     elif args.dataset == 'buckeye':
         # sadly no lookup file available
-        phones = "aa ae ay aw ao oy ow eh ey er ah uw uh ih iy m n en \
+        phones = f"aa ae ay aw ao oy ow eh ey er ah uw uh ih iy m n en \
             ng l el t d ch jh th dh sh zh s z k g p b f v w hh y r \
-            dx nx tq er em Vn SIL NOISE VOCNOISE {B_TRANS} {E_TRANS} \
+            dx nx tq er em Vn SIL NOISE VOCNOISE {{B_TRANS}} {{E_TRANS}} \
             IVER LAUGH CUTOFF ERROR B_THIRD_SPKR E_THIRD_SPKR UNKNOWN"
-        phonesDict = {i+1: j for i, j in enumerate(phones.split())}
-
+        phonesDict = {j: i for i, j in enumerate(phones.split())}
+    print(phonesDict)
     ext = ".WAV" if args.dataset =='timit' else ".wav"
     audioFilesTrain = glob.glob(os.path.join(args.pathDB, "TRAIN/**/*" + ext), recursive=True)
     open(os.path.join(args.pathOut, 'converted_aligned_phones.txt'), "w").close()
