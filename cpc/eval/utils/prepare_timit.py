@@ -4,6 +4,8 @@ import argparse
 import sys
 from shutil import copyfile
 import tqdm
+import numpy as np
+import torchaudio
 
 
 def processDataset(audioFiles, outPath, split, phonesDict):
@@ -18,20 +20,33 @@ def processDataset(audioFiles, outPath, split, phonesDict):
     # audioFiles = [p for p in audioFiles if 'SA' not in os.path.basename(p)]
     fileWriter = open(os.path.join(outPath, 'converted_aligned_phones.txt'), "a")
     for wavFile in tqdm.tqdm(audioFiles):
+        waveData, samplingRate = torchaudio.load(wavFile)
         speakerName = os.path.basename(os.path.dirname(wavFile))
         trackName = os.path.basename(wavFile)
         speakerDir = os.path.join(outPath, split, speakerName)
         os.makedirs(speakerDir, exist_ok=True)
-        copyfile(wavFile, os.path.join(speakerDir, trackName))
         labelsFile = wavFile[:-4] + '.PHN'
         with open(labelsFile) as fileReader:
             rawTimitLabel = fileReader.readlines()
         fileWriter.write(speakerName + '-' + trackName[:-4])
+        intervals2Keep = np.arange(waveData.size(1))
         for l in rawTimitLabel:
             t0, t1, phoneCode = l.strip().split()
-            phoneCode = str(phonesDict[phoneCode])
-            phoneDuration = int((int(t1) - int(t0)) * 100 / 16000)
-            fileWriter.write((' ' + phoneCode) * phoneDuration)
+            t0 = int(t0)
+            t1 = int(t1)
+            phoneDuration = t1 - t0
+            if phoneCode in ['pau', 'epi', '1', '2', 'h#']:
+                phoneCode = str(phonesDict[phoneCode])
+                nonSpeech2Keep = min(320, t1 - t0)
+                intervals2Keep = intervals2Keep[~np.isin(intervals2Keep, np.arange(t0, t0 + nonSpeech2Keep + 1))]
+                subSampledNonSpeech2Keep = int(nonSpeech2Keep * 100 / samplingRate)
+                fileWriter.write((' ' + phoneCode) * subSampledNonSpeech2Keep)
+            else:
+                phoneCode = str(phonesDict[phoneCode])
+                subSampledPhoneDuration = int(phoneDuration * 100 / samplingRate)
+                fileWriter.write((' ' + phoneCode) * subSampledPhoneDuration)
+        waveData = waveData[:, intervals2Keep].view(1, -1)
+        torchaudio.save(os.path.join(speakerDir, trackName), waveData, samplingRate, channels_first=True)
         fileWriter.write('\n')
     fileWriter.close()
 
