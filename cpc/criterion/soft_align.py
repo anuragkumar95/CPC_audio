@@ -242,7 +242,7 @@ class TimeAlignedPredictionNetwork(nn.Module):
 
         out = []
 
-        # mappings; LSTM output is (-1,1)-restricted, so torch.sigmoid(predictedLengths) is limited to (0.27,0.73)
+        # mappings; LSTM output is (-1,1)-restricted (non-conv mode), so torch.sigmoid(predictedLengths) is limited to (0.27,0.73)
         # however limiting this may actually help, hence the params
         if self.mode == "conv":
             predictedLengths = torch.sigmoid(predictedLengths) * (self.map01max - self.map01min) + self.map01min
@@ -250,7 +250,7 @@ class TimeAlignedPredictionNetwork(nn.Module):
             predictedLengths = ((predictedLengths + 1.) / 2.) * (self.map01max - self.map01min) + self.map01min  #torch.sigmoid(predictedLengths)
 
         if self.debug:
-            print("predictedLengths", predictedLengths.shape, predictedLengths if predictedLengths.numel() < 100 else "<tensor big>")
+            print("predictedLengths sfter mapping", predictedLengths.shape, predictedLengths if predictedLengths.numel() < 100 else "<tensor big>")
 
         if self.mode == "simple" or self.mode == "conv":
             # predictedLengths: B x N
@@ -379,6 +379,9 @@ class TimeAlignedPredictionNetwork(nn.Module):
             moreLengths = self.lengthsGradReweight * moreLengths - (self.lengthsGradReweight - 1.) * moreLengths.detach()
             # if one of the above options is used, can use this to increase gradients so that sum of magnitudes is as regular
 
+        if self.debug:
+            print("moreLengths (after teach sth less and reweighting)", moreLengths.shape, moreLengths if moreLengths.numel() < 100 else "<tensor big>")
+
         if self.modelFrameNormalsSigma is not None:
             normalsStdevs = torch.sqrt(torch.arange(1,self.nPredictions+1).to(moreLengths.device) * (self.modelFrameNormalsSigma)**2)
             # modifications assuming normal distributions of frame lengths; normalsStdevs are resulting standard devs for each prediciton lengths
@@ -401,6 +404,8 @@ class TimeAlignedPredictionNetwork(nn.Module):
         if weightType == "exp":
             if self.modelFrameNormalsSigma is not None:
                 lengthsDists = lengthsDists * (1./normalsStdevs.view(-1,1,1,1))  # decreases exponent for long predictions - more fuzzy
+                if self.debug:
+                    print("normalsStdevs", normalsStdevs.shape, normalsStdevs if normalsStdevs.numel() < 100 else "<tensor big>")
             weights = torch.exp(-w*lengthsDists)
             weightsNorms = weights.sum(-1)
             if self.debug:
@@ -410,6 +415,8 @@ class TimeAlignedPredictionNetwork(nn.Module):
         elif weightType == "doubleExp":
             if self.modelFrameNormalsSigma is not None:
                 lengthsDists = lengthsDists * (1./normalsStdevs.view(-1,1,1,1))  # decreases exponent for long predictions - more fuzzy
+                if self.debug:
+                    print("normalsStdevs", normalsStdevs.shape, normalsStdevs if normalsStdevs.numel() < 100 else "<tensor big>")
             weights = torch.exp(1.-torch.exp(w*lengthsDists))
             weightsNorms = weights.sum(-1)
             if self.debug:
@@ -426,6 +433,8 @@ class TimeAlignedPredictionNetwork(nn.Module):
             if self.modelFrameNormalsSigma is not None:
                 maxSeenDist = (self.seenDistMult*normalsStdevs).view(-1,1,1,1)  # seenDistMult * sigma needs to be at least 0.5001 (maybe better 1) for 1-long predictions
                 # ^ this param is actually not needed, increasing sigma has same effect in this case 
+                if self.debug:
+                    print("normalsStdevs", normalsStdevs.shape, normalsStdevs if normalsStdevs.numel() < 100 else "<tensor big>")
             weights = torch.clamp(maxSeenDist - lengthsDists, min=0)
             weightsNorms = weights.sum(-1)
             if self.debug:
@@ -444,6 +453,7 @@ class TimeAlignedPredictionNetwork(nn.Module):
                 weights[i] = thisFrameNormal.cdf(stripeEnds[i]) - thisFrameNormal.cdf(stripeBegins[i])
             weightsNorms = weights.sum(-1)
             if self.debug:
+                print("normalsStdevs", normalsStdevs.shape, normalsStdevs if normalsStdevs.numel() < 100 else "<tensor big>")
                 print("weightsUnnormed", weights.shape, weights if weights.numel() < 100 else "<tensor big>")
                 print("weightNorms", weightsNorms.shape, weightsNorms if weightsNorms.numel() < 100 else "<tensor big>")
             weights = weights / weightsNorms.view(*(weightsNorms.shape),1)  # need to normalize as not summing whole distribution mass
@@ -496,6 +506,11 @@ class TimeAlignedPredictionNetwork(nn.Module):
         ## now predsWeighted: predictions x B x (N-predictions) x Dim
 
         if self.debug:
+            ## predictsPerPredictor: predictors x B x (N-predictions) x Dim
+            print("predictsPerPredictor", predictsPerPredictor.shape, predictsPerPredictor if predictsPerPredictor.numel() < 100 else "<tensor big>")
+            ## weights: predictions x B x (N-predictions) x predictors
+            print("weights", weights.shape, weights if weights.numel() < 100 else "<tensor big>")
+            ## now predsWeighted: predictions x B x (N-predictions) x Dim
             print("predsWeighted", predsWeighted.shape, predsWeighted if predsWeighted.numel() < 100 else "<tensor big>")
 
         for k in range(self.nPredictions):  

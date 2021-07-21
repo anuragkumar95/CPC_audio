@@ -389,11 +389,9 @@ if __name__ == "__main__":
 
     # online kmeans test
 
-    distsSq = torch.tensor([[[1,2], [4,3], [5,6]], [[1,2], [4,3], [5,6]]], dtype=float)
+    
     batch = torch.tensor([[[7,7], [2,2], [3,3]], [[7,7], [2,2], [3,3]]], dtype=float)
-    protos = torch.tensor([[1,7], [123,2]], dtype=float)
-    closest = distsSq.argmin(-1)
-
+    
     cm = CentroidModule({
         "mode": "onlineKmeans",
         "onlineKmeansBatches": 3,  # can happen that only 1 will be drawn (all 3 from same batch) and then only 3 centroids will be there 
@@ -404,7 +402,7 @@ if __name__ == "__main__":
         "numPhones": 10,
         "firstInitNoIters": False,
         "kmeansInitIters": 3,
-        "kmeansInitBatches": 2,
+        "kmeansInitBatches": 3,
         "kmeansReinitEachN": None,
         "kmeansReinitUpTo": None,
         "onlineKmeansBatchesLongTerm": None,
@@ -413,7 +411,11 @@ if __name__ == "__main__":
         "pointNorm": False,
         "batchRecompute": False})
 
-    print(cm.getBatchSums(batch.cuda(), closest.cuda()))
+
+    # separate check
+    distsSq = torch.tensor([[[1,4], [4,1], [4,1]], [[1,4], [4,1], [4,1]]], dtype=float)  # only care for argmin
+    closest = distsSq.argmin(-1)
+    print(cm.getBatchSums(batch.cuda(), closest.cuda()))  
 
 
     batch1 = torch.tensor([[[17,17], [2,2], [31,31]], [[17,17], [2,2], [31,31]]], dtype=float).cuda()
@@ -428,11 +430,55 @@ if __name__ == "__main__":
         for batch in (batch1, batch2, batch3):
             cm.inputsBatchUpdate(batch, eps, cpcModelFake)
             cm.encodingsBatchUpdate(batch, eps, cpcModelFake)
-            print("\n! ", cm.centersForStuff(ep))
+            print("\n---> CENTERS AFTER BATCH UPDATE: ", cm.centersForStuff(ep))
         cm.epochUpdate(eps, cpcModelFake)
-        print("\n!!! ", cm.centersForStuff(ep))
+        print("\n===> CENTERS AFTER EPOCH: ", cm.centersForStuff(ep))
 
 
+    print("--------------------------")
+
+    batch = torch.tensor([[[7,8], [7,6], [0,3]], [[1,7], [2,2], [0,1]]], dtype=float)
+
+    cm = CentroidModule({
+        "mode": "onlineKmeans",
+        "onlineKmeansBatches": 3,  # can happen that only 1 will be drawn (all 3 from same batch) and then only 3 centroids will be there 
+        "reprDim": 2,
+        "numCentroids": 4,
+        "initAfterEpoch": 1,
+        "debug": True,
+        "numPhones": 10,
+        "firstInitNoIters": False,
+        "kmeansInitIters": 3,
+        "kmeansInitBatches": 3,
+        "kmeansReinitEachN": None,
+        "kmeansReinitUpTo": None,
+        "onlineKmeansBatchesLongTerm": None,
+        "onlineKmeansBatchesLongTermWeight": None,
+        "centerNorm": True,
+        "pointNorm": True,
+        "batchRecompute": False})
+
+
+    # separate check
+    distsSq = torch.tensor([[[1,4], [1,4], [4,1]], [[4,1], [1,4], [4,1]]], dtype=float)  # only care for argmin
+    closest = distsSq.argmin(-1)
+    print(cm.getBatchSums(batch.cuda(), closest.cuda()))
+
+    batch1 = torch.tensor([[[17,17], [0,20], [31,31]], [[0,20], [0,40], [31,31]]], dtype=float).cuda()
+    batch2 = torch.tensor([[[18,18], [1,21], [32,32]], [[1,21], [1,41], [32,32]]], dtype=float).cuda()
+    batch3 = torch.tensor([[[19,19], [2,22], [33,33]], [[2,22], [2,42], [33,33]]], dtype=float).cuda()
+
+    # onlyConv is just-conv-encode forward variant 
+    cpcModelFake = lambda batch, a, b, c, d, e, f, onlyConv: batch if onlyConv else (None, None, batch, None, None, None, None, None, None, None)
+
+    for ep in range(4):
+        eps = (ep,4)
+        for batch in (batch1, batch2, batch3):
+            cm.inputsBatchUpdate(batch, eps, cpcModelFake)
+            cm.encodingsBatchUpdate(batch, eps, cpcModelFake)
+            print("\n---> CENTERS AFTER BATCH UPDATE: ", cm.centersForStuff(ep))
+        cm.epochUpdate(eps, cpcModelFake)
+        print("\n===> CENTERS AFTER EPOCH: ", cm.centersForStuff(ep))    
 
 
 
