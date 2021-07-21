@@ -38,7 +38,7 @@ def processDataset(audioFiles, outPath, split, phonesDict):
             if phoneCode in ['pau', 'epi', '1', '2', 'h#']:
                 phoneCode = str(phonesDict[phoneCode])
                 nonSpeech2Keep = min(320, t1 - t0)
-                intervals2Keep = intervals2Keep[~np.isin(intervals2Keep, np.arange(t0, t0 + nonSpeech2Keep + 1))]
+                intervals2Keep = intervals2Keep[~np.isin(intervals2Keep, np.arange(t0 + nonSpeech2Keep, t1 + 1))]
                 subSampledNonSpeech2Keep = int(nonSpeech2Keep * 100 / samplingRate)
                 fileWriter.write((' ' + phoneCode) * subSampledNonSpeech2Keep)
             else:
