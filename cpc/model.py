@@ -344,6 +344,7 @@ class CPCModel(nn.Module):
         self.modelLengthInARconv = None
         self.shrinkEncodingsLengthDims = False
         self.showLengthsInCtx = False
+        self.pushLossReweightPointsSeparately = False
         
         if self.doMod:
             self.modDebug = modSettings["modDebug"]
@@ -368,6 +369,7 @@ class CPCModel(nn.Module):
             self.pushLossCenterNorm = modSettings["pushLossCenterNorm"]
             self.pushLossPointNorm = modSettings["pushLossPointNorm"]  # can be set only if centerNorm
             self.pushLossNormReweight = modSettings["pushLossNormReweight"]
+            self.pushLossReweightPointsSeparately = modSettings["pushLossReweightPointsSeparately"]
             print("reweight:", self.pushLossNormReweight)
             if self.pushLossPointNorm:
                 assert self.pushLossCenterNorm
@@ -640,7 +642,8 @@ class CPCModel(nn.Module):
             else:
                 centers = centers / torch.clamp(centersLens.view(-1,1), min=1)
                 points = points / torch.clamp(pointsLens.view(*(points.shape[:-1]),1), min=1)
-                if self.pushLossNormReweight and pushLossWeight is not None:  # for similar pushing weight as without norm
+                if self.pushLossNormReweight and pushLossWeight is not None \
+                and not self.pushLossReweightPointsSeparately:  # for similar pushing weight as without norm
                     # have to check for none, as in pushDegWithCenterDetach also entering here
                     pushLossWeight *= pointsLens.mean()
             # if we make only centers much shorter and encodings not, encodings will just be pushed to 0, each similarly
@@ -706,11 +709,21 @@ class CPCModel(nn.Module):
             closestCounts[indices] += indicesCounts
             
             mean = minDistsValues.mean()
-            pushLoss = mean * pushLossWeight
+
+            if self.pushLossReweightPointsSeparately:
+                if self.modDebug:
+                    print(f"pointsLens: {pointsLens.shape}, {pointsLens if pointsLens.numel() < 100 else '<tensor big>'}")
+                    print(f"minDistsValues: {minDistsValues.shape}, {minDistsValues if minDistsValues.numel() < 100 else '<tensor big>'}")
+                pushLoss = (pointsLens * minDistsValues).mean() * pushLossWeight
+            else:
+                if self.modDebug:
+                    print(f"pointsLens: {minDistsValues.shape}, {minDistsValues if minDistsValues.numel() < 100 else '<tensor big>'}")
+                pushLoss = mean * pushLossWeight
             
             if self.modDebug:
                 print(f"pushLossWeight, shapes: minDistsIndices {minDistsIndices.shape}, minDistsValues {minDistsValues.shape}, closestCounts {closestCounts.shape}")
-                print(f"pushLoss: {pushLoss.item()} (already multiplied with pushLossWeight {pushLossWeight})")
+                print(f"pushLoss: {pushLoss.item()} (already multiplied with pushLossWeight "
+                      f"{'being on average' if self.pushLossReweightPointsSeparately else 'equal to'} {pushLossWeight})")
 
             return pushLoss, closestCounts.view(1,-1)  # view because of dataparallel - would glue dimensions incorrectly otherwise
 

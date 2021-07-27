@@ -5,6 +5,7 @@ import torch
 import numpy as np
 import math
 from collections import deque
+import random
 
 from cpc.model import seDistancesToCentroids
 
@@ -24,6 +25,7 @@ class CentroidModule(nn.Module):
         self.protoCounts = None
         self.protoSums = None
         self.debug = settings["debug"]
+        self.addedChosenBatchInputs = set()
         self.chosenBatchInputs = []
         self.chosenKMeansBatches = []
         self.numCentroids = settings["numCentroids"]
@@ -92,17 +94,20 @@ class CentroidModule(nn.Module):
                     randNr = max(self.kmeansInitBatches, self.numCentroids)
                 else:
                     randNr = self.numCentroids
-                self.chosenExamples = np.random.choice(self.dsLen, randNr)
+                self.chosenExamples = np.random.choice(self.dsLen, randNr*2)  # choosing too much in case of repetitions, will cut below
+                self.chosenExamples = list(set(self.chosenExamples))
+                random.shuffle(self.chosenExamples)
+                self.chosenExamples = self.chosenExamples[:randNr]  # cutting too much choises - fixing out possible repetitions
                 if self.kmeansInitBatches:
                     self.chosenKMeansCandidateNrs = set(self.chosenExamples[:self.kmeansInitBatches])
                     print(f"--> CHOOSING {self.kmeansInitBatches} BATCHES FOR K-MEANS INIT POINTS;"
                            " will make k-means init with EXAMPLES as starting centers")
                 else:
                     self.chosenKMeansCandidateNrs = None
-                self.chosenCentroidsCandidateNrs = set(self.chosenExamples[:self.numCentroids])    
+                self.chosenCentroidsCandidateNrs = set(self.chosenExamples[:self.numCentroids])
                 self.chosenExamples = sorted(list(self.chosenExamples))
                 self.chosenExamples.append(1000000000000000000000000)  # for convenience and less cases below
-                print(f"--> CHOOSING {self.numCentroids} EXAMPLES FOR CENTROID INIT, DSLEN {self.dsLen}: {self.chosenExamples}")
+                print(f"--> CHOOSING {self.numCentroids} EXAMPLES FOR CENTROID INIT, DSLEN {self.dsLen}: {sorted(list(self.chosenCentroidsCandidateNrs))}")
             numHere = batch.shape[0] * batch.shape[1]  # not assuming each batch has same size because it does not sometimes
             candidateNr = self.chosenExamples[self.nextExampleNum]
             addedThisBatch = False
@@ -113,7 +118,8 @@ class CentroidModule(nn.Module):
                 if self.debug:
                     print(f"-> adding candidate / its batch, candidateNr {candidateNr}, batch data end {self.seenNr + numHere}, batch data shape {self.last_input_batch.shape}")
                 with torch.no_grad():  # self.last_input_batch already detached
-                    if candidateNr in self.chosenCentroidsCandidateNrs:
+                    if candidateNr in self.chosenCentroidsCandidateNrs and candidateNr not in self.addedChosenBatchInputs:
+                        self.addedChosenBatchInputs.add(candidateNr)
                         self.chosenBatchInputs.append((self.last_input_batch.clone().cpu(), lineNr, lineOffset))
                         print(f"--> ADDED BATCH EXAMPLE #{self.nextExampleNum}")
                     if self.chosenKMeansCandidateNrs and candidateNr in self.chosenKMeansCandidateNrs and not addedThisBatch:  # both this and above can happen
@@ -389,12 +395,14 @@ if __name__ == "__main__":
 
     # online kmeans test
 
+    # can happen that only points from 1 batch are chosen for init and this can make it needed to rerun (randomization)
+    # but should be rare
     
     batch = torch.tensor([[[7,7], [2,2], [3,3]], [[7,7], [2,2], [3,3]]], dtype=float)
     
     cm = CentroidModule({
         "mode": "onlineKmeans",
-        "onlineKmeansBatches": 3,  # can happen that only 1 will be drawn (all 3 from same batch) and then only 3 centroids will be there 
+        "onlineKmeansBatches": 2,  
         "reprDim": 2,
         "numCentroids": 4,
         "initAfterEpoch": 1,
@@ -402,7 +410,7 @@ if __name__ == "__main__":
         "numPhones": 10,
         "firstInitNoIters": False,
         "kmeansInitIters": 3,
-        "kmeansInitBatches": 3,
+        "kmeansInitBatches": 5,  # can happen that only 1 will be drawn (all 3 from same batch) and then only 3 centroids will be there 
         "kmeansReinitEachN": None,
         "kmeansReinitUpTo": None,
         "onlineKmeansBatchesLongTerm": None,
@@ -417,6 +425,10 @@ if __name__ == "__main__":
     closest = distsSq.argmin(-1)
     print(cm.getBatchSums(batch.cuda(), closest.cuda()))  
 
+
+    # sometimes needs to be retried to be valuable as things are randomized
+    # the idea is so that there are 3 "main" centroids, around (2,2), (18,18/0 and (32,32),
+    # 4th centroid can easily zero out (no closest points at some moment) in this setting quickly
 
     batch1 = torch.tensor([[[17,17], [2,2], [31,31]], [[17,17], [2,2], [31,31]]], dtype=float).cuda()
     batch2 = torch.tensor([[[18,18], [2,2], [32,32]], [[18,18], [2,2], [32,32]]], dtype=float).cuda()
@@ -441,7 +453,7 @@ if __name__ == "__main__":
 
     cm = CentroidModule({
         "mode": "onlineKmeans",
-        "onlineKmeansBatches": 3,  # can happen that only 1 will be drawn (all 3 from same batch) and then only 3 centroids will be there 
+        "onlineKmeansBatches": 2,  
         "reprDim": 2,
         "numCentroids": 4,
         "initAfterEpoch": 1,
@@ -449,7 +461,7 @@ if __name__ == "__main__":
         "numPhones": 10,
         "firstInitNoIters": False,
         "kmeansInitIters": 3,
-        "kmeansInitBatches": 3,
+        "kmeansInitBatches": 5,  # can happen that only 1 will be drawn (all 3 from same batch) and then only 3 centroids will be there 
         "kmeansReinitEachN": None,
         "kmeansReinitUpTo": None,
         "onlineKmeansBatchesLongTerm": None,
@@ -464,9 +476,14 @@ if __name__ == "__main__":
     closest = distsSq.argmin(-1)
     print(cm.getBatchSums(batch.cuda(), closest.cuda()))
 
-    batch1 = torch.tensor([[[17,17], [0,20], [31,31]], [[0,20], [0,40], [31,31]]], dtype=float).cuda()
-    batch2 = torch.tensor([[[18,18], [1,21], [32,32]], [[1,21], [1,41], [32,32]]], dtype=float).cuda()
-    batch3 = torch.tensor([[[19,19], [2,22], [33,33]], [[2,22], [2,42], [33,33]]], dtype=float).cuda()
+
+    # sometimes needs to be retried to be valuable as things are randomized
+    # the idea is so that there are 3 "main" centroids, around: (0.71, 0.71), (0,1) and (-1,0),
+    # 4th centroid can easily zero out (no closest points at some moment) in this setting quickly
+
+    batch1 = torch.tensor([[[-21,1], [0,20], [31,31]], [[0,20], [-50,2], [31,31]]], dtype=float).cuda()
+    batch2 = torch.tensor([[[18,18], [1,21], [-100,5]], [[1,21], [-1234,41], [32,32]]], dtype=float).cuda()
+    batch3 = torch.tensor([[[19,19], [-55,4], [33,33]], [[-7,0], [2,42], [33,33]]], dtype=float).cuda()
 
     # onlyConv is just-conv-encode forward variant 
     cpcModelFake = lambda batch, a, b, c, d, e, f, onlyConv: batch if onlyConv else (None, None, batch, None, None, None, None, None, None, None)

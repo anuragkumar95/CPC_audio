@@ -832,6 +832,7 @@ def main(args):
             "pushLossCenterNorm": args.modPushLossCenterNorm,
             "pushLossPointNorm": args.modPushLossPointNorm,
             "pushLossNormReweight": args.modPushLossNormReweight,
+            "pushLossReweightPointsSeparately": args.modPushLossReweightPointsSeparately,
             "hierARshorten": args.modHierARshorten,
             "hierARgradualStart": args.modHierARgradualStart,
             "hierARmergePrior": args.modHierARmergePrior,
@@ -1398,6 +1399,7 @@ def parseArgs(argv):
     group_mod.add_argument('--modPushLossCenterNorm', action='store_true')
     group_mod.add_argument('--modPushLossPointNorm', action='store_true')
     group_mod.add_argument('--modPushLossNormReweight', action='store_true')
+    group_mod.add_argument('--modPushLossReweightPointsSeparately', action='store_true')
     group_mod.add_argument('--modHierARshorten', type=float, default=None)  # how big length reduction to make
     group_mod.add_argument('--modHierARgradualStart', type=int, default=None)
     group_mod.add_argument('--modHierARmergePrior', type=str, default="se")  # how big length reduction to make
