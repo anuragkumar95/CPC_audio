@@ -3,8 +3,16 @@
 import torch
 from cpc.criterion.soft_align import TimeAlignedPredictionNetwork
 from torch.distributions import Normal
+from math import sqrt
 
 ### lengths are 0.2 which after remapping is 0.6: to subsequent frames, 0.6, 1.2 1.8
+
+## all cases predict 3 frames and use 4 predictors (0,1,2,3)
+
+### ---> check if weights are calculated correctly and predictions weighted correctly
+### correct unnormalized weights are listed below in each case,
+### and correct prediction weighting can be checked based on following debug: 
+### predictsPerPredictor, weights, predsWeighted appearing near each case's end
 
 print("---> 1")
 
@@ -12,7 +20,7 @@ print("---> 1")
 
 # for this test using a different rnMode, doesn't matter for what is checked
 # predicting 2-dim encodings from 1-dim context representations and detached length predictions (2 dim after all)
-pred = TimeAlignedPredictionNetwork(3, 3, 2, 2, rnnMode='LSTM', dropout=False, sizeInputSeq=4,
+pred = TimeAlignedPredictionNetwork(3, 4, 2, 2, rnnMode='LSTM', dropout=False, sizeInputSeq=4,
                                     mode="simple", weightMode=("exp", 1.), debug=True).cuda()
 
 featc = torch.tensor([[[1,0.2],[2,0.2],[3,0.2],[4,0.2]]]).cuda()
@@ -22,7 +30,7 @@ predLengths = featc[:,:,-1]  # like with option to pass detached lengths to pred
 # predictors #0, #1, #2, #3
 # 1st prediction: 0.5488, 0.6703, 0.2466, 0.0907
 # 2nd prediction: 0.3012, 0.8187, 0.4493, 0.1653
-# 3rd prediction: 0.1653, 0.4493, 0.4493, 0.3012
+# 3rd prediction: 0.1653, 0.4493, 0.8187, 0.3012
 
 print(featc.shape)
 
@@ -39,7 +47,7 @@ print("---> 2")
 
 # for this test using a different rnMode, doesn't matter for what is checked
 # predicting 2-dim encodings from 1-dim context representations and detached length predictions (2 dim after all)
-pred = TimeAlignedPredictionNetwork(3, 3, 2, 2, rnnMode='LSTM', dropout=False, sizeInputSeq=4,
+pred = TimeAlignedPredictionNetwork(3, 4, 2, 2, rnnMode='LSTM', dropout=False, sizeInputSeq=4,
                                     mode="simple", weightMode=("exp", 2.), debug=True).cuda()
 
 featc = torch.tensor([[[1,0.2],[2,0.2],[3,0.2],[4,0.2]]]).cuda()
@@ -66,7 +74,7 @@ print("---> 3")
 
 # for this test using a different rnMode, doesn't matter for what is checked
 # predicting 2-dim encodings from 1-dim context representations and detached length predictions (2 dim after all)
-pred = TimeAlignedPredictionNetwork(3, 3, 2, 2, rnnMode='LSTM', dropout=False, sizeInputSeq=4,
+pred = TimeAlignedPredictionNetwork(3, 4, 2, 2, rnnMode='LSTM', dropout=False, sizeInputSeq=4,
                                     mode="simple", weightMode=("doubleExp", 1.), debug=True).cuda()
 
 featc = torch.tensor([[[1,0.2],[2,0.2],[3,0.2],[4,0.2]]]).cuda()
@@ -91,9 +99,11 @@ print("---> 4")
 
 ### ---> check if weights are calculated correctly and predictions weighted correctly
 
+# here just look at weights debug, there is no separate unnormalized debug as normalization is not necessary in this case
+
 # for this test using a different rnMode, doesn't matter for what is checked
 # predicting 2-dim encodings from 1-dim context representations and detached length predictions (2 dim after all)
-pred = TimeAlignedPredictionNetwork(3, 3, 2, 2, rnnMode='LSTM', dropout=False, sizeInputSeq=4,
+pred = TimeAlignedPredictionNetwork(3, 4, 2, 2, rnnMode='LSTM', dropout=False, sizeInputSeq=4,
                                     mode="simple", weightMode=("bilin", None), debug=True).cuda()
 
 featc = torch.tensor([[[1,0.2],[2,0.2],[3,0.2],[4,0.2]]]).cuda()
@@ -120,7 +130,7 @@ print("---> 5")
 
 # for this test using a different rnMode, doesn't matter for what is checked
 # predicting 2-dim encodings from 1-dim context representations and detached length predictions (2 dim after all)
-pred = TimeAlignedPredictionNetwork(3, 3, 2, 2, rnnMode='LSTM', dropout=False, sizeInputSeq=4,
+pred = TimeAlignedPredictionNetwork(3, 4, 2, 2, rnnMode='LSTM', dropout=False, sizeInputSeq=4,
                                     mode="simple", weightMode=("trilin", None), debug=True).cuda()
 
 featc = torch.tensor([[[1,0.2],[2,0.2],[3,0.2],[4,0.2]]]).cuda()
@@ -147,7 +157,7 @@ print("---> 6")
 
 # for this test using a different rnMode, doesn't matter for what is checked
 # predicting 2-dim encodings from 1-dim context representations and detached length predictions (2 dim after all)
-pred = TimeAlignedPredictionNetwork(3, 3, 2, 2, rnnMode='LSTM', dropout=False, sizeInputSeq=4,
+pred = TimeAlignedPredictionNetwork(3, 4, 2, 2, rnnMode='LSTM', dropout=False, sizeInputSeq=4,
                                     mode="simple", weightMode=("normals", None), modelNormalsSettings=(0.2, 1.),
                                     debug=True).cuda()
 
@@ -155,11 +165,11 @@ featc = torch.tensor([[[1,0.2],[2,0.2],[3,0.2],[4,0.2]]]).cuda()
 predLengths = featc[:,:,-1]  # like with option to pass detached lengths to predictors
 
 dist1 = Normal(0.6, 0.2)
-dist2 = Normal(1.2, 0.4)
-dist3 = Normal(1.8, 0.6)
+dist2 = Normal(1.2, sqrt(0.2**2 * 2))
+dist3 = Normal(1.8, sqrt(0.2**2 * 3))
 def stripeMass(distribution, l, r):
-    return distribution.cdf(r) - distribution.cdf(l)
-print("correct weights")
+    return (distribution.cdf(torch.tensor(r, dtype=float)) - distribution.cdf(torch.tensor(l, dtype=float))).item()
+print("correct weights (unnormalized)")
 # correct weights (unnormalized):
 # predictors #0, #1, #2, #3
 # standard deviations for predictions 1,2,3: 0.2, 0.4, 0.6
@@ -185,7 +195,7 @@ print("---> 7")
 
 # for this test using a different rnMode, doesn't matter for what is checked
 # predicting 2-dim encodings from 1-dim context representations and detached length predictions (2 dim after all)
-pred = TimeAlignedPredictionNetwork(3, 3, 2, 2, rnnMode='LSTM', dropout=False, sizeInputSeq=4,
+pred = TimeAlignedPredictionNetwork(3, 4, 2, 2, rnnMode='LSTM', dropout=False, sizeInputSeq=4,
                                     mode="simple", weightMode=("exp", 1.), modelNormalsSettings=(0.5, 1.),
                                     debug=True).cuda()
 
@@ -194,10 +204,11 @@ predLengths = featc[:,:,-1]  # like with option to pass detached lengths to pred
 
 # correct weights (unnormalized):
 # predictors #0, #1, #2, #3
-# standard deviations for predictions 1,2,3: 0.5, 1, 1.5, which serve as exponent multipliers
-# 1st prediction (exp 0.5): 0.7408, 0.8187, 0.4966, 0.3012
-# 2nd prediction (exp 1): 0.3012, 0.8187, 0.4493, 0.1653
-# 3rd prediction (exp 1.5): 0.0672, 0.3012, 0.7408, 0.1653
+# standard deviations for predictions 1,2,3: 0.5, sqrt(0.5^2 * 2)=0.7071, sqrt(0.5^2 * 3)=0.866, 
+#                                            which serve as exponent denominator multipliers
+# 1st prediction (exp 0.5): 0.3012, 0.4493, 0.0608, 0.0082
+# 2nd prediction (exp sqrt(0.5^2 * 2)=0.7071): 0.1832, 0.7536, 0.3226, 0.0784
+# 3rd prediction (exp sqrt(0.5^2 * 3)=0.866): 0.1251, 0.397, 0.7938, 0.2502
 
 print(featc.shape)
 
@@ -213,7 +224,7 @@ print("---> 8")
 
 # for this test using a different rnMode, doesn't matter for what is checked
 # predicting 2-dim encodings from 1-dim context representations and detached length predictions (2 dim after all)
-pred = TimeAlignedPredictionNetwork(3, 3, 2, 2, rnnMode='LSTM', dropout=False, sizeInputSeq=4,
+pred = TimeAlignedPredictionNetwork(3, 4, 2, 2, rnnMode='LSTM', dropout=False, sizeInputSeq=4,
                                     mode="simple", weightMode=("trilin", None), modelNormalsSettings=(0.6, 1.),
                                     debug=True).cuda()
 
@@ -222,10 +233,11 @@ predLengths = featc[:,:,-1]  # like with option to pass detached lengths to pred
 
 # correct weights (unnormalized):
 # predictors #0, #1, #2, #3
-# standard deviations for predictions 1,2,3: 0.6, 1.2, 1.8 (equal to linear-weight distance the predictor is seen in)
-# 1st prediction: 0, 0.2, 0, 0
-# 2nd prediction: 0, 1, 0.4, 0
-# 3rd prediction: 0, 1, 1.6, 0.6
+# standard deviations for predictions 1,2,3: 0.6, sqrt(0.6^2 * 2)=0.8485, sqrt(0.6^2 * 3)=1.0392 
+#                                            (equal to linear-weight distance the predictor is seen in)
+# 1st prediction (weight radius 0.6): 0, 0.2, 0, 0
+# 2nd prediction (weight radius sqrt(0.6^2 * 2)=0.8485): 0, 0.6845, 0.0485, 0
+# 3rd prediction (weight radius sqrt(0.6^2 * 3)=1.0392): 0, 0.2392, 0.8392, 0
 
 print(featc.shape)
 
