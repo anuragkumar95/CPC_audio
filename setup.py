@@ -13,6 +13,11 @@ extensions = [
         ["cpc/eval/ABX/dtw.pyx"],
         include_dirs=[numpy.get_include()],
     ),
+    Extension(
+        "cpc.segm.costsegmcython",
+        ["cpc/segm/costsegmcython.pyx"],
+        include_dirs=[numpy.get_include()],
+    ),
 ]
 
 setup(

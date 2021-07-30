@@ -302,14 +302,14 @@ def seDistancesToCentroids(vecs, centroids, doNorm=False, debug=False):
         centrLengths = torch.sqrt(torch.clamp((centroids*centroids).sum(-1), min=0))
         centroids = centroids / torch.clamp(centrLengths.view(k, 1), min=0.000000000001)
         if debug:
-            print("vecLengths", vecLengths.shape, vecLengths)
-            print("centrLengths", centrLengths.shape, centrLengths)
+            print("vecLengths", vecLengths.shape, vecLengths if vecLengths.numel() < 100 else "<tensor big>")
+            print("centrLengths", centrLengths.shape, centrLengths if centrLengths.numel() < 100 else "<tensor big>")
             print(f'vec lengths after norm from {vecLengths.min().item()} to {vecLengths.max().item()}')
             print(f'center lengths after norm from {centrLengths.min().item()} to {centrLengths.max().item()}')
     res = torch.square(centroids).sum(1).view(1, 1, -1) + torch.square(vecs).sum(-1).view(B, N, 1) \
         - 2*(vecs.view(B, N, 1, -1) * centroids.view(1, 1, k, -1)).sum(-1)  
     if debug:
-        print("seDistancesToCentroids res", res.shape, res)
+        print("seDistancesToCentroids res", res.shape, res if res.numel() < 100 else "<tensor big>")
         t1 = time.time()
         print(f"seDistancesToCentroids calc time: {t1-t0}")
     return res
@@ -345,6 +345,8 @@ class CPCModel(nn.Module):
         self.shrinkEncodingsLengthDims = False
         self.showLengthsInCtx = False
         self.pushLossReweightPointsSeparately = False
+        self.pushLossWeightEnc = None
+        self.pushLossWeightCtx = None
         
         if self.doMod:
             self.modDebug = modSettings["modDebug"]
@@ -393,7 +395,7 @@ class CPCModel(nn.Module):
 
         # [!] OK, DataParallel splits in same way at both forward stages when push
         if self.modDebug:
-            print(f"CPC model forward arg1 shape {arg1.shape}, arg2 shape {arg2.shape} | -> calcPushLoss {calcPushLoss}")
+            print(f"CPC model forward arg1 shape {arg1.shape if arg1 is not None else None}, arg2 shape {arg2.shape if arg2 is not None else None} | -> calcPushLoss {calcPushLoss}")
 
         epochNow_, epochAll_ = map(float,epochNrs)
 

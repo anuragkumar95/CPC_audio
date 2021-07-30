@@ -49,10 +49,10 @@ print("--> 1")
 
 modSettings1 = deepcopy(modSettingsBase)
 
-cpcModel1 = CPCModel(encFake, ARFake, modSettings1)
+cpcModel1 = CPCModel(encFake, ARFake, 32, modSettings1)
 
-givenCenters1 = torch.tensor([[1.5,1.5], [2.,2.], [5.,5.]], dtype=torch.float)
-encoded_data1 = torch.tensor([[[1.,1.], [2.,2.]], [[3.,3.], [8.,9.]]], dtype=torch.float)
+givenCenters1 = torch.tensor([[1.5,1.5], [2.,2.], [5.,5.]], dtype=torch.float).cuda()
+encoded_data1 = torch.tensor([[[1.,1.], [2.,2.]], [[3.,3.], [8.,9.]]], dtype=torch.float).cuda()
 # closest centroids (Euclid) & lin distances: 0 (sqrt(2)/2), 1 (0.), 1 (sqrt(2)), 2 (5)
 # sum dist: 1.5 sqrt(2) + 5 = 7.1213
 # loss 1/40 of that (weight 0.1 and 4 points - it's avg): 0.1780
@@ -70,12 +70,12 @@ modSettings2["pushLossCenterNorm"] = True
 modSettings2["pushLossPointNorm"] = True
 modSettings2["pushLossNormReweight"] = True
 
-cpcModel2 = CPCModel(encFake, ARFake, modSettings2)
+cpcModel2 = CPCModel(encFake, ARFake, 32, modSettings2)
 
-givenCenters2 = torch.tensor([[1.,1.], [1.,-1.], [-2.,1.]], dtype=torch.float)
+givenCenters2 = torch.tensor([[1.,1.], [1.,-1.], [-2.,1.]], dtype=torch.float).cuda()
 # after norm: [1 / sqrt(2), 1 / sqrt(2)], [1 / sqrt(2), -1 / sqrt(2)], [2 / sqrt(5), 1 / sqrt(5)]
 #             = [0.7071, 0.7071], [0.7071, -0.7071], [-0.8944, 0.4472]
-encoded_data2 = torch.tensor([[[1.,1.5], [2.,-2.5]], [[-4.,2.], [4.,4.]]], dtype=torch.float)
+encoded_data2 = torch.tensor([[[1.,1.5], [2.,-2.5]], [[-4.,2.], [4.,4.]]], dtype=torch.float).cuda()
 # lengths (approx): 1.8028, 3.2016, 4.4721, 5.6569
 # after norm (approx): [0.5547,0.8320], [0.6247,-0.7809], [-0.8944,0.4472], [0.7071,0.7071]
 # closest after norm (diff; Euclid dist): 0 ([-0.1524,0.1249]; 0.1970), 1 ([-0.0824,-0.0738]; 0.1106), 2 ([0,0]; 0), 0 ([0,0]; 0)
@@ -97,12 +97,12 @@ modSettings3["pushLossPointNorm"] = True
 modSettings3["pushLossNormReweight"] = True
 modSettings3["pushLossReweightPointsSeparately"] = True
 
-cpcModel3 = CPCModel(encFake, ARFake, modSettings3)
+cpcModel3 = CPCModel(encFake, ARFake, 32, modSettings3)
 
-givenCenters3 = torch.tensor([[1.,1.], [1.,-1.], [-2.,1.]], dtype=torch.float)
+givenCenters3 = torch.tensor([[1.,1.], [1.,-1.], [-2.,1.]], dtype=torch.float).cuda()
 # after norm: [1 / sqrt(2), 1 / sqrt(2)], [1 / sqrt(2), -1 / sqrt(2)], [2 / sqrt(5), 1 / sqrt(5)]
 #             = [0.7071, 0.7071], [0.7071, -0.7071], [-0.8944, 0.4472]
-encoded_data3 = torch.tensor([[[1.,1.5], [2.,-2.5]], [[-4.,2.], [4.,4.]]], dtype=torch.float)
+encoded_data3 = torch.tensor([[[1.,1.5], [2.,-2.5]], [[-4.,2.], [4.,4.]]], dtype=torch.float).cuda()
 # lengths (approx): 1.8028, 3.2016, 4.4721, 5.6569
 # after norm (approx): [0.5547,0.8320], [0.6247,-0.7809], [-0.8944,0.4472], [0.7071,0.7071]
 # closest after norm (diff; Euclid dist): 0 ([-0.1524,0.1249]; 0.1970), 1 ([-0.0824,-0.0738]; 0.1106), 2 ([0,0]; 0), 0 ([0,0]; 0)
@@ -122,12 +122,12 @@ modSettings4["pushLossCenterNorm"] = True
 modSettings4["pushLossPointNorm"] = True
 modSettings4["pushLossNormReweight"] = False
 
-cpcModel4 = CPCModel(encFake, ARFake, modSettings4)
+cpcModel4 = CPCModel(encFake, ARFake, 32, modSettings4)
 
-givenCenters4 = torch.tensor([[1.,1.], [1.,-1.], [-2.,1.]], dtype=torch.float)
+givenCenters4 = torch.tensor([[1.,1.], [1.,-1.], [-2.,1.]], dtype=torch.float).cuda()
 # after norm: [1 / sqrt(2), 1 / sqrt(2)], [1 / sqrt(2), -1 / sqrt(2)], [2 / sqrt(5), 1 / sqrt(5)]
 #             = [0.7071, 0.7071], [0.7071, -0.7071], [-0.8944, 0.4472]
-encoded_data4 = torch.tensor([[[1.,1.5], [2.,-2.5]], [[-4.,2.], [4.,4.]]], dtype=torch.float)
+encoded_data4 = torch.tensor([[[1.,1.5], [2.,-2.5]], [[-4.,2.], [4.,4.]]], dtype=torch.float).cuda()
 # lengths (approx): 1.8028, 3.2016, 4.4721, 5.6569
 # after norm (approx): [0.5547,0.8320], [0.6247,-0.7809], [-0.8944,0.4472], [0.7071,0.7071]
 # closest after norm (diff; Euclid dist): 0 ([-0.1524,0.1249]; 0.1970), 1 ([-0.0824,-0.0738]; 0.1106), 2 ([0,0]; 0), 0 ([0,0]; 0)
@@ -145,10 +145,10 @@ print("--> 5")
 modSettings5 = deepcopy(modSettingsBase)
 modSettings5["pushLossLinear"] = False
 
-cpcModel5 = CPCModel(encFake, ARFake, modSettings5)
+cpcModel5 = CPCModel(encFake, ARFake, 32, modSettings5)
 
-givenCenters5 = torch.tensor([[1.5,1.5], [2.,2.], [5.,5.]], dtype=torch.float)
-encoded_data5 = torch.tensor([[[1.,1.], [2.,2.]], [[3.,3.], [8.,9.]]], dtype=torch.float)
+givenCenters5 = torch.tensor([[1.5,1.5], [2.,2.], [5.,5.]], dtype=torch.float).cuda()
+encoded_data5 = torch.tensor([[[1.,1.], [2.,2.]], [[3.,3.], [8.,9.]]], dtype=torch.float).cuda()
 # closest centroids (Euclid) & sq distances: 0 (0.5), 1 (0.), 1 (2), 2 (25)
 # sum dist: 27.5, 
 # loss 1/40 of that (weight 0.1 and 4 points - it's avg): 0.6875

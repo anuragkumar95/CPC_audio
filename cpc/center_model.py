@@ -285,7 +285,7 @@ class CentroidModule(nn.Module):
         protosHere = self.centersForStuff(epoch)
         if protosHere is None:
             return None
-        DMsq = seDistancesToCentroids(protosHere, protosHere).view(protosHere.shape[0], protosHere.shape[0], debug=self.debug)
+        DMsq = seDistancesToCentroids(protosHere, protosHere, debug=self.debug).view(protosHere.shape[0], protosHere.shape[0])
         return torch.sqrt(torch.clamp(DMsq, min=0))
 
     def epochUpdate(self, epochNrs, cpcModel):  # after that epoch
