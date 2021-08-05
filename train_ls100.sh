@@ -30,10 +30,10 @@ rsync --exclude '.*' \
 
 echo $0 "$@" >> ${SAVE_DIR}/out.txt
 exec python -u cpc/train.py \
---pathDB /pio/data/zerospeech2021/LibriSpeech-wav/train-clean-100 \
---pathTrain /pio/scratch/2/jch/wav2vec/LibriSpeech100_labels_split/train_split.txt \
---pathVal /pio/scratch/2/jch/wav2vec/LibriSpeech100_labels_split/test_split.txt \
---file_extension .wav \
+--pathDB /pio/gluster/data/ls-train-clean-100/LibriSpeech/train-clean-100 \
+--pathTrain /pio/gluster/data/ls-train-clean-100/train_split.txt \
+--pathVal /pio/gluster/data/ls-train-clean-100/test_split.txt \
+--file_extension .flac \
 --normMode layerNorm \
 --dropout \
 --rnnMode transformer \

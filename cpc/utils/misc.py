@@ -11,6 +11,7 @@ import psutil
 from copy import deepcopy
 from bisect import bisect_left
 import torch.nn.functional as F
+from scipy.signal import find_peaks
 
 def levenshteinDistance(s1, s2):
     if len(s1) > len(s2):
@@ -27,7 +28,20 @@ def levenshteinDistance(s1, s2):
         distances = distances_
     return distances[-1]
 
-def sequence_segmenter(encodedData, final_length_factor, minLengthSeq, step_reduction=0.2):
+def kreukBoundaryDetector(encodedData, prominence, justSegmenter=None):
+    scores = -F.cosine_similarity(encodedData[:, :-1, :], encodedData[:, 1:, :], dim=-1).view(-1)
+    minScore, maxScore = scores.min(), scores.max()
+    scores = (scores - minScore) / (maxScore - minScore)
+    peaks, _ = find_peaks(scores.cpu().numpy(), prominence=prominence)
+    if len(peaks) == 0:
+        peaks = torch.tensor([0])
+    peaks = torch.tensor(peaks + 1)
+    # Ensure that minibatch boundaries are preserved
+    seqEndIdx = torch.arange(0, encodedData.size(0)*encodedData.size(1) + 1, encodedData.size(1))
+    peaks = torch.unique(torch.cat((peaks, seqEndIdx)), sorted=True)
+    return peaks
+
+def jchBoundaryDetector(encodedData, final_length_factor, minLengthSeq=None, step_reduction=0.2, justSegmenter=False):
     assert not torch.isnan(encodedData).any()
     device = encodedData.device
     encFlat = F.pad(encodedData.reshape(-1, encodedData.size(-1)).detach(), (0, 0, 1, 0))
@@ -56,6 +70,8 @@ def sequence_segmenter(encodedData, final_length_factor, minLengthSeq, step_redu
     seq_end_idx = torch.arange(0, encodedData.size(0)*encodedData.size(1) + 1, encodedData.size(1), device=device)
     idx = torch.unique(torch.cat((idx, seq_end_idx)), sorted=True)
 
+    if justSegmenter:
+        return idx
     # now work out cut indices in each minibatch element
     # batch_elem_idx = idx // encodedData.size(1)
     # transition_idx = F.pad(torch.nonzero(batch_elem_idx[1:] != batch_elem_idx[:-1]), (0,0, 1,0))

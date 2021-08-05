@@ -7,7 +7,7 @@ import torch.nn.functional as F
 import torchaudio
 
 import torch
-from .utils.misc import sequence_segmenter, compress_batch, decompress_padded_batch
+from .utils.misc import jchBoundaryDetector, compress_batch, decompress_padded_batch
 
 ###########################################
 # Networks
@@ -227,7 +227,7 @@ class CPCAR(nn.Module):
         for l in range(1, self.numLevels):
             if self.smartPooling:
                 minLengthSeq = max(1, int(round(2* self.minLengthSeqMinusOne / self.reductionFactor**l))) + 1
-                compressedMatrices, compressedLens = sequence_segmenter(x, 1 / self.reductionFactor**l, minLengthSeq, self.stepReduction)
+                compressedMatrices, compressedLens = jchBoundaryDetector(x, 1 / self.reductionFactor**l, minLengthSeq, self.stepReduction)
                 packedCompressedX = compress_batch(
                     x, compressedMatrices, compressedLens, pack=True
                 )

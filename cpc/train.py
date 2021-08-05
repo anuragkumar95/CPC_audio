@@ -350,7 +350,10 @@ def run(trainDataset,
             print(f"Capturing data for epoch {epoch}")
             captureStep(captureLoader, cpcModel, cpcCriterion, captureOptions, captureStatsCollector, epoch)
 
-        currentAccuracy = (float(locLogsVal["locAcc_val_head0"].mean()) + float(locLogsVal["locAcc_val_head1"].mean())) / 2
+        # if cpcCriterion.smartPooling:
+        #     currentAccuracy = (float(locLogsVal["locAcc_val_head0"].mean()) + float(locLogsVal["locAcc_val_head1"].mean())) / 2
+        # else:
+        currentAccuracy = float(locLogsVal["locAcc_val_head0"].mean())
         if currentAccuracy > bestAcc:
             bestStateDict = deepcopy(fl.get_module(cpcModel).state_dict())  
 

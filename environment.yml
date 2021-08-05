@@ -15,6 +15,7 @@ dependencies:
   - nose
   - cython
   - pysoundfile
+  - scipy
   - pip:
     - progressbar2
     - matplotlib
