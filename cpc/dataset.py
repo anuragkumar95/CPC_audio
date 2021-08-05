@@ -15,8 +15,13 @@ from multiprocessing import dummy
 from torch.utils.data import Dataset, DataLoader
 from torch.utils.data.sampler import Sampler, BatchSampler
 
-import torchaudio
+#import resource
+#rlimit = resource.getrlimit(resource.RLIMIT_NOFILE)
+#resource.setrlimit(resource.RLIMIT_NOFILE, (4096, rlimit[1]))
 
+import torchaudio
+torchaudio.set_audio_backend("sox_io")
+#torch.multiprocessing.set_sharing_strategy('file_system')
 
 class AudioBatchData(Dataset):
 
@@ -50,8 +55,8 @@ class AudioBatchData(Dataset):
         self.dbPath = Path(path)
         self.sizeWindow = sizeWindow
         self.seqNames = [(s, self.dbPath / x) for s, x in seqNames]
-        #self.reload_pool = Pool(nProcessLoader)
-        self.reload_pool = dummy.Pool(nProcessLoader)
+        self.reload_pool = Pool(nProcessLoader, maxtasksperchild=1)
+        # self.reload_pool = dummy.Pool(nProcessLoader)
 
         self.prepare()
         self.speakers = list(range(nSpeakers))
@@ -278,9 +283,13 @@ def loadFile(data):
 
     # Due to some issues happening when combining torchaudio.load
     # with torch.multiprocessing we use soundfile to load the data
-    seq = torch.tensor(sf.read(str(fullPath))[0]).float()
+    # seq = torch.tensor(sf.read(str(fullPath))[0]).float()
+    # if len(seq.size()) == 2:
+    #     seq = seq.mean(dim=1)
+
+    seq = torchaudio.load(str(fullPath))[0].float()
     if len(seq.size()) == 2:
-        seq = seq.mean(dim=1)
+        seq = seq.mean(dim=0)
     return speaker, seqName, seq
 
 
@@ -425,8 +434,8 @@ class SameSpeakerSampler(Sampler):
 
 def extractLength(couple):
     speaker, locPath = couple
-    info = torchaudio.info(str(locPath))[0]
-    return info.length
+    meta_data = torchaudio.info(str(locPath))
+    return meta_data.num_frames
 
 
 def findAllSeqs(dirName,
