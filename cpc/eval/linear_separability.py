@@ -20,7 +20,7 @@ from cpc.model import CPCModelNullspace
 
 
 
-def train_step(feature_maker, criterion, data_loader, optimizer, label_key="speaker", centerpushSettings=None):
+def train_step(feature_maker, criterion, data_loader, optimizer, CPCLevel, label_key="speaker", centerpushSettings=None):
     if feature_maker.optimize:
         feature_maker.train()
     criterion.train()
@@ -33,9 +33,13 @@ def train_step(feature_maker, criterion, data_loader, optimizer, label_key="spea
         batch_data, label_data = fulldata
         label = label_data[label_key]
         c_feature, encoded_data, _ = feature_maker(batch_data, None)
-        c_feature = c_feature[0]
+        c_feature = c_feature[CPCLevel]
         if not feature_maker.optimize:
-            c_feature, encoded_data = c_feature.detach(), encoded_data.detach()
+            encoded_data = encoded_data.detach()
+            if isinstance(c_feature, dict):
+                c_feature['states'] = c_feature['states'].detach()
+            else:
+                c_feature = c_feature.detach()
 
         if centerpushSettings:
             centers, pushDeg = centerpushSettings
@@ -56,7 +60,7 @@ def train_step(feature_maker, criterion, data_loader, optimizer, label_key="spea
     return logs
 
 
-def val_step(feature_maker, criterion, data_loader, label_key="speaker", centerpushSettings=None):
+def val_step(feature_maker, criterion, data_loader, CPCLevel, label_key="speaker", centerpushSettings=None):
 
     feature_maker.eval()
     criterion.eval()
@@ -68,7 +72,7 @@ def val_step(feature_maker, criterion, data_loader, label_key="speaker", centerp
             batch_data, label_data = fulldata
             label = label_data[label_key]
             c_feature, encoded_data, _ = feature_maker(batch_data, None)
-            c_feature = c_feature[0]
+            c_feature = c_feature[CPCLevel]
             if centerpushSettings:
                 centers, pushDeg = centerpushSettings
                 c_feature = utils.pushToClosestForBatch(c_feature, centers, deg=pushDeg)
@@ -91,6 +95,7 @@ def run(feature_maker,
         logs,
         n_epochs,
         path_checkpoint,
+        CPCLevel,
         label_key="speaker",
         centerpushSettings=None):
 
@@ -102,8 +107,8 @@ def run(feature_maker,
     for epoch in range(start_epoch, n_epochs):
 
         logs_train = train_step(feature_maker, criterion, train_loader,
-                                optimizer, label_key=label_key, centerpushSettings=centerpushSettings)
-        logs_val = val_step(feature_maker, criterion, val_loader, label_key=label_key, centerpushSettings=centerpushSettings)
+                                optimizer, CPCLevel, label_key=label_key, centerpushSettings=centerpushSettings)
+        logs_val = val_step(feature_maker, criterion, val_loader, CPCLevel, label_key=label_key, centerpushSettings=centerpushSettings)
 
         print('')
         print('_'*50)
@@ -299,6 +304,8 @@ def parse_args(argv):
     parser.add_argument('--centerpushFile', type=str, default=None, help="path to checkpoint containing cluster centers")
     parser.add_argument('--centerpushDeg', type=float, default=None, help="part of (euclidean) distance to push to the center")
 
+    parser.add_argument('--CPCLevel', type=int, default=0, help="")
+
     args = parser.parse_args(argv)
     if args.nGPU < 0:
         args.nGPU = torch.cuda.device_count()
@@ -490,7 +497,8 @@ def main(argv):
         centerpushSettings = None
 
     run(model, criterion, train_loader, val_loader, optimizer, logs,
-        args.n_epoch, args.pathCheckpoint, label_key=label_key, centerpushSettings=centerpushSettings)
+        args.n_epoch, args.pathCheckpoint, args.CPCLevel if args.CTC else 0, 
+        label_key=label_key, centerpushSettings=centerpushSettings)
 
 
 
