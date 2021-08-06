@@ -109,6 +109,48 @@ def jchBoundaryDetector(encodedData, final_length_factor, minLengthSeq=None, ste
     assert compress_matrices.shape[0] == encodedData.shape[0]
     return compress_matrices, compressed_lens
 
+def jhuBoundaryDetector(encodedData, threshold=0.04, justSegmenter=False):
+    # BS x Len x DimEnc
+    device = encodedData.device
+    batchSize, Len, _ = encodedData.shape
+    d_s = F.cosine_similarity(encodedData[:, :-1, :], encodedData[:, 1:, :], dim=-1)
+    dsmin = torch.min(d_s, dim=-1)[0].view(-1, 1)
+    dsmax = torch.max(d_s, dim=-1)[0].view(-1, 1)
+    d = 1 - (d_s - dsmin) / (dsmax - dsmin)
+
+    zeros_2_comp = torch.zeros_like(d, device=device)
+    pt_1 = torch.minimum(torch.maximum(F.pad(d[:,1:] - d[:,:-1], (1,0)), zeros_2_comp), 
+                            torch.maximum(F.pad(d[:,:-1] - d[:,1:], (0,1)), zeros_2_comp))
+    pt_2 = torch.minimum(torch.maximum(F.pad(d[:,2:] - d[:,:-2], (2,0)), zeros_2_comp), 
+                            torch.maximum(F.pad(d[:,:-2] - d[:,2:], (0,2)), zeros_2_comp))
+    p = torch.minimum(torch.maximum(torch.maximum(pt_1, pt_2) - threshold, zeros_2_comp), pt_1)
+
+    if justSegmenter:
+        p = F.pad(p, (1,0), value=1)
+        idx = torch.nonzero(p.contiguous().view(-1), as_tuple=True)[0]
+        seqEndIdx = torch.arange(0, encodedData.size(0)*encodedData.size(1) + 1, encodedData.size(1), device=device)
+        idx = torch.unique(torch.cat((idx, seqEndIdx)), sorted=True)
+        return idx
+
+    b_soft = torch.tanh(10 * p)
+    b_hard = torch.tanh(1000 * p)
+    b = b_soft + (b_hard - b_soft).detach() # stopping gradient in PyTorch?
+    b = F.pad(b, (1,0), value=1)
+
+    compressed_lens = torch.sum(b, dim=1).cpu()
+    M = int(torch.max(compressed_lens))
+    # very ugly?
+    U = torch.arange(1, M+1, device=device).view(M, -1).expand((batchSize, -1, Len))
+    ret = torch.nn.utils.rnn.pack_padded_sequence(U, compressed_lens,
+                                 batch_first=True, enforce_sorted=False)
+    U = torch.nn.utils.rnn.pad_packed_sequence(ret, batch_first=True)[0]
+
+    V = U.permute(0, 2, 1) - torch.cumsum(b, dim=1).view(batchSize, Len, 1)
+    W = 1 - torch.tanh(100000 * abs(V))
+    W /= torch.maximum(torch.sum(W, dim=1).view(batchSize, 1, M), torch.ones(batchSize, 1, M, device=device))
+    ZW = W.permute(0, 2, 1) @ encodedData
+    
+    return ZW, W, compressed_lens
 
 def compress_batch(encodedData, compress_matrices, compressed_lens, pack=False):
     ret = torch.bmm(
@@ -124,7 +166,7 @@ def decompress_padded_batch(compressed_data, compress_matrices):
         # We pad to have the maximum possible sequence length so as to be compatible with multi GPU setup
         compressed_data, _ = torch.nn.utils.rnn.pad_packed_sequence(
             compressed_data, batch_first=True, total_length=compress_matrices.size(2))
-    assert (compress_matrices.sum(1) == 1).all()
+    #assert (compress_matrices.sum(1) == 1).all()
     return compressed_data
 
 
@@ -279,3 +321,4 @@ class SchedulerCombiner:
             out += f"({index}) {scheduler.__str__()} \n"
         out += ")\n"
         return out
+                                   

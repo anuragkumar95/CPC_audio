@@ -7,7 +7,7 @@ import torch.nn.functional as F
 import torchaudio
 
 import torch
-from .utils.misc import jchBoundaryDetector, compress_batch, decompress_padded_batch
+from .utils.misc import jchBoundaryDetector, jhuBoundaryDetector, compress_batch, decompress_padded_batch
 
 ###########################################
 # Networks
@@ -166,7 +166,8 @@ class CPCAR(nn.Module):
                  numLevels,
                  minLengthSeqMinusOne,
                  mode="GRU",
-                 reverse=False):
+                 reverse=False,
+                 segmentationType='jch'):
 
         super(CPCAR, self).__init__()
         self.RESIDUAL_STD = 0.1
@@ -191,6 +192,7 @@ class CPCAR(nn.Module):
         self.smartPooling = smartPooling
         self.stepReduction = stepReduction
         self.minLengthSeqMinusOne = minLengthSeqMinusOne
+        self.segmentationType = segmentationType
 
     def getDimOutput(self):
         return self.heads[0].hidden_size

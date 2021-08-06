@@ -242,6 +242,8 @@ def main(argv):
         boundaryDetector = utils.jchBoundaryDetector
     elif args.boundaryDetector == 'kreuk':
         boundaryDetector = utils.kreukBoundaryDetector
+    elif args.boundaryDetector == 'jhu':
+        boundaryDetector = utils.jhuBoundaryDetector
     else:
         raise NotImplementedError
 
