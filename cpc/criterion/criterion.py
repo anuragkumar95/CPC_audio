@@ -386,9 +386,15 @@ class CTCPhoneCriterion(BaseCriterion):
         return self.PhoneCriterionClassifier(cFeature).view(B, S, -1)
 
     def forward(self, cFeature, otherEncoded, label):
+        if isinstance(cFeature, dict):  # Second head uses smart pooling, therefore variable seqLens
+            targetSizePred = cFeature['seqLens']
+            cFeature = cFeature['states']
+            B, _, H = cFeature.size()
+        else:
+            B, S, H = cFeature.size()
+            targetSizePred = torch.ones(B, dtype=torch.int64,
+                                    device=cFeature.device) * S
 
-        # cFeature.size() : batchSize x seq Size x hidden size
-        B, S, H = cFeature.size()
         predictions = self.getPrediction(cFeature)
         label = label.to(predictions.device)
         label, sizeLabels = collapseLabelChain(label)
@@ -403,8 +409,6 @@ class CTCPhoneCriterion(BaseCriterion):
         avgPER /= B
 
         predictions = predictions.permute(1, 0, 2)
-        targetSizePred = torch.ones(B, dtype=torch.int64,
-                                    device=predictions.device) * S
         loss = self.lossCriterion(predictions, label,
                                   targetSizePred, sizeLabels).view(1, -1)
 

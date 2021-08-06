@@ -91,7 +91,8 @@ def run(featureMaker,
     logsVal = evalPhoneSegmentation(featureMaker, boundaryDetector, valLoader, labelKey)
     utils.show_logs("Training stats", logsTrain)
     utils.show_logs("Validation stats", logsVal)
-    utils.save_logs(logs, f"{pathCheckpoint}_logs.json")
+    utils.save_logs(logsTrain, f"{pathCheckpoint}_logsTrain.json")
+    utils.save_logs(logsVal, f"{pathCheckpoint}_logsVal.json")
 
 
 def save_linsep_best_checkpoint(cpc_model_state, classif_net_criterion_state, optimizer_state, 

@@ -39,12 +39,12 @@ rsync --exclude '.*' \
 
 echo $0 "$@" >> ${SAVE_DIR}/out.txt
 exec python -u cpc/eval/linear_separability.py \
-    /pio/data/zerospeech2021/LibriSpeech-wav/train-clean-100 \
-    /pio/scratch/2/jch/wav2vec/LibriSpeech100_labels_split/train_split.txt \
-    /pio/scratch/2/jch/wav2vec/LibriSpeech100_labels_split/test_split.txt \
+    /pio/gluster/data/ls-train-clean-100/LibriSpeech/train-clean-100 \
+    /pio/gluster/data/ls-train-clean-100/train_split.txt \
+    /pio/gluster/data/ls-train-clean-100/test_split.txt \
     "$@" \
-    --pathPhone /pio/scratch/2/i323106/converted_aligned_phones.txt \
-    --file_extension .wav \
+    --pathPhone /pio/gluster/data/ls-train-clean-100/converted_aligned_phones.txt \
+    --file_extension .flac \
     --pathCheckpoint $SAVE_DIR \
     # --get_encoded \
     2>&1 | tee -ai ${SAVE_DIR}/out.txt
