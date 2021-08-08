@@ -47,6 +47,10 @@ def set_default_cpc_config(parser):
     group.add_argument('--smartPooling', action='store_true')
     group.add_argument('--stepReduction', type=float, default=0.2)
     group.add_argument('--segmentationType', type=str, default='jch')
+    group.add_argument('--path_phone_data', type=str, default=None,
+                        help="Path to the phone labels. If given, with --supervised_classif_metric will be able "
+                        'to learn phone classification, with capturing will be able to capture phone alignments.'
+                        'Can also be used for ground truth segmentation in multihead CPC training')
 
     
     group.add_argument('--negativeSamplingExt', type=int, default=128,

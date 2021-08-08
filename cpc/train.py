@@ -101,7 +101,8 @@ def trainStep(dataLoader,
               optimizer,
               scheduler,
               loggingStep,
-              headWeights):
+              headWeights,
+              PhoneLabels):
 
     cpcModel.train()
     cpcCriterion.train()
@@ -112,7 +113,7 @@ def trainStep(dataLoader,
     iter = 0
     for step, fulldata in enumerate(dataLoader):
         batchData, labelData = fulldata
-        label = labelData['speaker']
+        label = labelData['speaker'] if PhoneLabels is None else labelData['phone']
         n_examples += batchData.size(0)
         batchData = batchData.cuda(non_blocking=True)
         label = label.cuda(non_blocking=True)
@@ -160,7 +161,8 @@ def trainStep(dataLoader,
 
 def valStep(dataLoader,
             cpcModel,
-            cpcCriterion):
+            cpcCriterion,
+            PhoneLabels):
 
     cpcCriterion.eval()
     cpcModel.eval()
@@ -172,7 +174,7 @@ def valStep(dataLoader,
     for step, fulldata in enumerate(dataLoader):
 
         batchData, labelData = fulldata
-        label = labelData['speaker']
+        label = labelData['speaker'] if PhoneLabels is None else labelData['phone']
 
         batchData = batchData.cuda(non_blocking=True)
         label = label.cuda(non_blocking=True)
@@ -306,7 +308,8 @@ def run(trainDataset,
         optimizer,
         scheduler,
         logs,
-        headWeights):
+        headWeights,
+        PhoneLabels):
 
     startEpoch = len(logs["epoch"])
     print(f"Running {nEpoch} epochs, now at {startEpoch}")
@@ -344,9 +347,9 @@ def run(trainDataset,
             (len(trainLoader), len(valLoader), batchSize))
 
         locLogsTrain = trainStep(trainLoader, cpcModel, cpcCriterion,
-                                optimizer, scheduler, logs["logging_step"], headWeights)
+                                optimizer, scheduler, logs["logging_step"], headWeights, PhoneLabels)
 
-        locLogsVal = valStep(valLoader, cpcModel, cpcCriterion)
+        locLogsVal = valStep(valLoader, cpcModel, cpcCriterion, PhoneLabels)
 
         if captureDataset is not None and epoch % captureEachEpochs == 0:
             print(f"Capturing data for epoch {epoch}")
@@ -506,9 +509,14 @@ def main(args):
             seqVal = seqVal[-100:]
 
         phoneLabels, nPhones = None, None
-        if args.supervised and args.pathPhone is not None:
-            print("Loading the phone labels at " + args.pathPhone)
-            phoneLabels, nPhones = parseSeqLabels(args.pathPhone)
+        # if args.supervised and args.pathPhone is not None:
+        #     print("Loading the phone labels at " + args.pathPhone)
+        #     phoneLabels, nPhones = parseSeqLabels(args.pathPhone)
+        #     print(f"{nPhones} phones found")
+
+        if args.path_phone_data is not None:
+            print("Loading the phone labels at " + args.path_phone_data)
+            phoneLabels, nPhones = parseSeqLabels(args.path_phone_data)
             print(f"{nPhones} phones found")
 
         print("")
@@ -596,7 +604,7 @@ def main(args):
         # AR Network
         arNet = fl.getAR(args)
 
-        cpcModel = model.CPCModel(encoderNet, arNet)
+        cpcModel = model.CPCModel(encoderNet, arNet, args.path_phone_data)
 
     CPChiddenGar, CPChiddenEncoder = args.hiddenGar, args.hiddenEncoder
 
@@ -815,7 +823,8 @@ def main(args):
             optimizer,
             scheduler,
             logs,
-            args.headWeights)
+            args.headWeights,
+            args.path_phone_data)
     if args.onlyCapture:  
     # caution [!] - will capture for last checkpoint (last saved state) if checkpoint directory given
     #               to use specific checkpoint provide full checkpoint file path
