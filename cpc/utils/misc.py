@@ -124,21 +124,21 @@ def jhuBoundaryDetector(encodedData, threshold=0.04, justSegmenter=False):
     pt_2 = torch.minimum(torch.maximum(F.pad(d[:,2:] - d[:,:-2], (2,0)), zeros_2_comp), 
                             torch.maximum(F.pad(d[:,:-2] - d[:,2:], (0,2)), zeros_2_comp))
     p = torch.minimum(torch.maximum(torch.maximum(pt_1, pt_2) - threshold, zeros_2_comp), pt_1)
+    p = F.pad(p, (1,0), value=1)
 
     if justSegmenter:
-        p = F.pad(p, (1,0), value=1)
         idx = torch.nonzero(p.contiguous().view(-1), as_tuple=True)[0]
         seqEndIdx = torch.arange(0, encodedData.size(0)*encodedData.size(1) + 1, encodedData.size(1), device=device)
         idx = torch.unique(torch.cat((idx, seqEndIdx)), sorted=True)
         return idx
 
     b_soft = torch.tanh(10 * p)
-    b_hard = torch.tanh(1000 * p)
+    b_hard = torch.tanh(10000 * p)
     b = b_soft + (b_hard - b_soft).detach() # stopping gradient in PyTorch?
-    b = F.pad(b, (1,0), value=1)
+    
 
-    compressed_lens = torch.sum(b, dim=1).cpu()
-    M = int(torch.max(compressed_lens))
+    compressed_lens = torch.sum(b, dim=1).int().cpu()
+    M = torch.max(compressed_lens).int()
     # very ugly?
     U = torch.arange(1, M+1, device=device).view(M, -1).expand((batchSize, -1, Len))
     ret = torch.nn.utils.rnn.pack_padded_sequence(U, compressed_lens,
@@ -148,7 +148,8 @@ def jhuBoundaryDetector(encodedData, threshold=0.04, justSegmenter=False):
     V = U.permute(0, 2, 1) - torch.cumsum(b, dim=1).view(batchSize, Len, 1)
     W = 1 - torch.tanh(100000 * abs(V))
     W /= torch.maximum(torch.sum(W, dim=1).view(batchSize, 1, M), torch.ones(batchSize, 1, M, device=device))
-    ZW = W.permute(0, 2, 1) @ encodedData
+    W = W.permute(0, 2, 1)
+    ZW = W @ encodedData
     
     return ZW, W, compressed_lens
 
@@ -321,4 +322,3 @@ class SchedulerCombiner:
             out += f"({index}) {scheduler.__str__()} \n"
         out += ")\n"
         return out
-                                   

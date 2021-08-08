@@ -5,8 +5,8 @@ import sys
 from shutil import copyfile
 import tqdm
 import numpy as np
-import buckeye
 import torchaudio
+import io
 
 
 def processDataset(audioFiles, outPath, split, phonesDict, dataset='timit'):
@@ -31,14 +31,12 @@ def processDataset(audioFiles, outPath, split, phonesDict, dataset='timit'):
             with open(labelsFile) as fileReader:
                 rawLabels = fileReader.readlines()
         elif dataset == 'buckeye':
-            filepath = wavFile.split(".")[0]
-            considered_track = buckeye.Track(name=trackName[:-4],
-                                            words=filepath + '.words',
-                                            phones=filepath + '.phones',
-                                            log=filepath + '.log',
-                                            txt=filepath + '.txt',
-                                            wav=wavFile)
-            rawLabels = considered_track.phones
+            print(f"Currently working on {wavFile}")
+            labelsFile = wavFile[:-4] + '.phones'
+            if not hasattr(labelsFile, 'readline'):
+                phones = io.open(labelsFile, encoding='latin-1')
+            rawLabels = list(process_phones(phones))
+            phones.close()
         fileWriter.write(speakerName + '-' + trackName[:-4])
         intervals2Keep = np.arange(waveData.size(1))
         for l in rawLabels:
@@ -51,19 +49,16 @@ def processDataset(audioFiles, outPath, split, phonesDict, dataset='timit'):
             t0 = int(t0)
             t1 = int(t1)
             phoneDuration = t1 - t0
-            if phoneCode in ['pau', 'epi', '1', '2', 'h#'] or phoneCode.isupper():
+            if phoneCode in ['ERROR', '<EXCLUDE-name>', '<exclude-Name>', 'EXCLUDE', '<EXCLUDE>'] or phoneCode is None:
+                intervals2Keep = intervals2Keep[~np.isin(intervals2Keep, np.arange(t0, t1 + 1))]
+            elif phoneCode in ['pau', 'epi', '1', '2', 'h#', 'IVER y'] or phoneCode.isupper():
                 phoneCode = str(phonesDict[phoneCode])
                 nonSpeech2Keep = min(320, t1 - t0)
                 intervals2Keep = intervals2Keep[~np.isin(intervals2Keep, np.arange(t0 + nonSpeech2Keep, t1 + 1))]
                 subSampledNonSpeech2Keep = int(nonSpeech2Keep * 100 / samplingRate)
                 fileWriter.write((' ' + phoneCode) * subSampledNonSpeech2Keep)
             else:
-                try:
-                    phoneCode = str(phonesDict[phoneCode])
-                except KeyError:
-                    print(f"Encountered phoneme {phoneCode} not included in the Buckeye corpus manual...")
-                    phonesDict[phoneCode] = len(phonesDict.keys())
-                    phoneCode = str(phonesDict[phoneCode])
+                phoneCode = str(phonesDict[phoneCode])
                 subSampledPhoneDuration = int(phoneDuration * 100 / samplingRate)
                 fileWriter.write((' ' + phoneCode) * subSampledPhoneDuration)
         waveData = waveData[:, intervals2Keep].view(1, -1)
@@ -85,6 +80,83 @@ def getPhonesDict(phonesDocPath):
                 phones[phone + 'cl'] = len(phones)
     return phones
 
+class Phone(object):
+    def __init__(self, seg, beg=None, end=None):
+        self._seg = seg
+        self._beg = beg
+        self._end = end
+
+    def __repr__(self):
+        return 'Phone({}, {}, {})'.format(repr(self._seg), self._beg, self._end)
+
+    def __str__(self):
+        return '<Phone [{}] at {}>'.format(self._seg, self._beg)
+
+    @property
+    def seg(self):
+        """Label for this phone (e.g., using ARPABET transcription)."""
+        return self._seg
+
+    @property
+    def beg(self):
+        """Timestamp where the phone begins."""
+        return self._beg
+
+    @property
+    def end(self):
+        """Timestamp where the phone ends."""
+        return self._end
+
+    @property
+    def dur(self):
+        """Duration of the phone."""
+        try:
+            return self._end - self._beg
+
+        except TypeError:
+            raise AttributeError('Duration is not available if beg and end '
+                                 'are not numeric types')
+
+def process_phones(phones):
+    # skip the header
+    line = phones.readline()
+
+    while not line.startswith('#'):
+        if line == '':
+            raise EOFError
+
+        line = phones.readline()
+
+    line = phones.readline()
+
+    # iterate over entries
+    previous = 0.0
+    while line != '':
+        try:
+            time, color, phone = line.split(None, 2)
+
+            if '+1' in phone:
+                phone = phone.replace('+1', '')
+
+            if ';' in phone:
+                phone = phone.split(';')[0]
+
+            phone = phone.strip()
+
+        except ValueError:
+            if line == '\n':
+                line = phones.readline()
+                continue
+
+            time, color = line.split()
+            phone = None
+
+        time = float(time)
+        yield Phone(phone, previous, time)
+
+        previous = time
+        line = phones.readline()
+
 
 def parse_args(argv):
     parser = argparse.ArgumentParser(description='Prepare the TIMIT data set for the CPC pipeline.')
@@ -105,12 +177,23 @@ def main(argv):
         phonesDict = getPhonesDict(os.path.join(args.pathDB, 'DOC', 'PHONCODE.DOC'))
     elif args.dataset == 'buckeye':
         # sadly no lookup file available
-        phones = f"aa ae ay aw ao oy ow eh ey er ah uw uh ih iy m n en \
-            ng l el t d ch jh th dh sh zh s z k g p b f v w hh y r \
-            dx nx tq er em Vn SIL NOISE VOCNOISE {{B_TRANS}} {{E_TRANS}} \
-            IVER LAUGH CUTOFF ERROR B_THIRD_SPKR E_THIRD_SPKR UNKNOWN"
-        phonesDict = {j: i for i, j in enumerate(phones.split())}
-    print(phonesDict)
+        phonesDict = {  # phonemes which should be the same for TIMIT
+                        'a': 0, 'aa': 1, 'aan': 2, 'ae': 3, 'aen': 4, 'ah': 0, 'ahn': 5, 'an': 5, 
+                        'ao': 6, 'aon': 7, 'aw': 8, 'awn': 9, 'ay': 10, 'ayn': 11, 'b': 12, 'ch': 13, 
+                        'd': 14, 'dh': 15, 'dx': 16, 'eh': 17, 'ehn': 18, 'el': 19, 'em': 20, 'en': 21, 
+                        'eng': 22, 'er': 23, 'ern': 24, 'ey': 25, 'eyn': 26, 'f': 27, 'g': 28, 'h': 29, 
+                        'hh': 29, 'hhn': 30, 'i': 31, 'id': 31, 'ih': 31, 'ihn': 32, 'iy': 33, 'iyih': 32, 
+                        'iyn': 32, 'jh': 34, 'k': 35, 'l': 36, 'm': 37, 'n': 38, 'ng': 39, 'nx': 40, 
+                        'ow': 41, 'own': 42, 'oy': 43, 'oyn': 44, 'p': 45, 'q': 46, 'r': 47, 's': 48, 
+                        'sh': 49, 't': 50, 'th': 51, 'tq': 46, 'uh': 52, 'uhn': 53, 'uw': 54, 'uwix': 54, 
+                        'uwn': 55, 'v': 56, 'w': 57, 'y': 58, 'z': 59, 'zh': 60, 
+                        # non-phoneme labels, treat them as either silence or noise
+                        'SIL': 61, f"{{B_TRANS}}": 61, f"{{E_TRANS}}": 61, 'B_THIRD_SPKR': 61, 'E_THIRD_SPKR': 61, 
+                        'NOISE': 62, 'VOCNOISE': 62, 'IVER': 62, 'LAUGH': 62, 'UNKNOWN': 62, 'CUTOFF': 62,
+                        # leftovers added after looping through the whole dataset, try to match them with existing ones:
+                        'x': 63, 'e': 17, 'ih l': 31, 'ah r': 0, 'ah l': 0, 'ah ix': 0, 'uw ix':54, 'ah n': 5, 
+                        'no': 64, 'IVER y': 62, 'j': 34, 'IVER-LAUGH': 62
+                    }
     ext = ".WAV" if args.dataset =='timit' else ".wav"
     audioFilesTrain = glob.glob(os.path.join(args.pathDB, "TRAIN/**/*" + ext), recursive=True)
     open(os.path.join(args.pathOut, 'converted_aligned_phones.txt'), "w").close()

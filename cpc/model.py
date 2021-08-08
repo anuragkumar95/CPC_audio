@@ -229,11 +229,14 @@ class CPCAR(nn.Module):
         for l in range(1, self.numLevels):
             if self.smartPooling:
                 minLengthSeq = max(1, int(round(2* self.minLengthSeqMinusOne / self.reductionFactor**l))) + 1
-                compressedMatrices, compressedLens = jchBoundaryDetector(x, 1 / self.reductionFactor**l, minLengthSeq, self.stepReduction)
-                packedCompressedX = compress_batch(
-                    x, compressedMatrices, compressedLens, pack=True
-                )
-                # transformedX.append(packedCompressedX)
+                if self.segmentationType == 'jch':
+                    compressedMatrices, compressedLens = jchBoundaryDetector(x, 1 / self.reductionFactor**l, minLengthSeq, self.stepReduction)
+                    packedCompressedX = compress_batch(
+                        x, compressedMatrices, compressedLens, pack=True
+                    )
+                elif self.segmentationType == 'jhu':
+                    xPadded, compressedMatrices, compressedLens = jhuBoundaryDetector(x)
+                    packedCompressedX = torch.nn.utils.rnn.pack_padded_sequence(xPadded, compressedLens, batch_first=True, enforce_sorted=False)
                 packedX, packedH = self.heads[l](packedCompressedX, self.hidden[l])
                 o = decompress_padded_batch(packedX, compressedMatrices)
                 outs.append({
