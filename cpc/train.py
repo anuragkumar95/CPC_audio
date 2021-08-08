@@ -13,17 +13,22 @@ import random
 import psutil
 import sys
 import torchaudio
+import warnings
 
 import cpc.criterion as cr
+import cpc.criterion.soft_align as sa
 import cpc.model as model
 import cpc.utils.misc as utils
 import cpc.feature_loader as fl
-from cpc.balance_sampler import get_balance_sampler
+try:
+    from cpc.balance_sampler import get_balance_sampler
+except ModuleNotFoundError:
+    warnings.warn("cpc.balance_sampler unavailable")
 from cpc.cpc_default_config import set_default_cpc_config
 from cpc.dataset import AudioBatchData, findAllSeqs, filterSeqs, parseSeqLabels, \
                         PeakNorm
-from cpc.criterion.research import CPCBertCriterion, DeepEmbeddedClustering, \
-    DeepClustering, CTCCLustering
+from cpc.criterion.research import CPCBertCriterion  # , DeepEmbeddedClustering, \
+    # DeepClustering, CTCCLustering
 from cpc.distributed_training.distributed_mode import init_distributed_mode
 from cpc.data_augmentation import augmentation_factory
 from cpc.clustering.clustering import buildNewPhoneDict
@@ -42,18 +47,42 @@ def getCriterion(args, downsampling, nSpeakers, nPhones):
         else:
             mode = "cumNorm" if args.normMode == "cumNorm" else args.cpc_mode
             sizeInputSeq = (args.sizeWindow // downsampling)
-            cpcCriterion = cr.CPCUnsupersivedCriterion(args.nPredicts,
-                                                       args.hiddenGar,
-                                                       args.hiddenEncoder,
-                                                       args.negativeSamplingExt,
-                                                       mode=mode,
-                                                       rnnMode=args.rnnMode,
-                                                       dropout=args.dropout,
-                                                       nSpeakers=nSpeakers,
-                                                       speakerEmbedding=args.speakerEmbedding,
-                                                       sizeInputSeq=sizeInputSeq,
-                                                       multihead_rnn=args.multihead_rnn,
-                                                       transformer_pruning=args.transformer_pruning)
+            if args.CPCCTC:
+                cpcCriterion = sa.CPCUnsupersivedCriterion(args.nPredicts,
+                                                        args.CPCCTCNumMatched,
+                                                        args.hiddenGar,
+                                                        args.hiddenEncoder,
+                                                        args.negativeSamplingExt,
+                                                        allowed_skips_beg=args.CPCCTCSkipBeg,
+                                                        allowed_skips_end=args.CPCCTCSkipEnd,
+                                                        predict_self_loop=args.CPCCTCSelfLoop,
+                                                        learn_blank=args.CPCCTCLearnBlank,
+                                                        normalize_enc=args.CPCCTCNormalizeEncs,
+                                                        normalize_preds=args.CPCCTCNormalizePreds,
+                                                        masq_rules=args.CPCCTCMasq,
+                                                        loss_temp=args.CPCCTCLossTemp,
+                                                        no_negs_in_match_window=args.CPCCTCNoNegsMatchWin,
+                                                        limit_negs_in_batch=args.limitNegsInBatch,
+                                                        mode=mode,
+                                                        rnnMode=args.rnnMode,
+                                                        dropout=args.dropout,
+                                                        nSpeakers=nSpeakers,
+                                                        speakerEmbedding=args.speakerEmbedding,
+                                                        sizeInputSeq=sizeInputSeq)
+
+            else:
+                cpcCriterion = cr.CPCUnsupersivedCriterion(args.nPredicts,
+                                                           args.hiddenGar,
+                                                           args.hiddenEncoder,
+                                                           args.negativeSamplingExt,
+                                                           mode=mode,
+                                                           rnnMode=args.rnnMode,
+                                                           dropout=args.dropout,
+                                                           nSpeakers=nSpeakers,
+                                                           speakerEmbedding=args.speakerEmbedding,
+                                                           sizeInputSeq=sizeInputSeq,
+                                                           multihead_rnn=args.multihead_rnn,
+                                                           transformer_pruning=args.transformer_pruning)
     elif args.pathPhone is not None:
         if not args.CTC:
             cpcCriterion = cr.PhoneCriterion(dimFeatures,
@@ -108,7 +137,8 @@ def adversarialTrainStep(dataLoader, cpcModel,
         encoded_data = encoded_data[b:, :, :]
         label =label[:b]
 
-        allLosses, allAcc = cpcCriterion(c_feature, encoded_data, label)
+        # Catch 'captured' with '*_'
+        allLosses, allAcc, *_ = cpcCriterion(c_feature, encoded_data, label)
         lossSpeak, _ = speakerCriterion(c_feature, encoded_data, None)
         totLoss = allLosses.sum() + lossSpeak.sum()
 
@@ -197,7 +227,8 @@ def trainStep(dataLoader,
         encoded_data = encoded_data[b:, :, :]
         label =label[:b]
 
-        allLosses, allAcc = cpcCriterion(c_feature, encoded_data, label)
+        # Catch 'captured' with '*_'
+        allLosses, allAcc, *_ = cpcCriterion(c_feature, encoded_data, label)
         totLoss = allLosses.sum()
         totLoss.backward()
 
@@ -270,7 +301,8 @@ def valStep(dataLoader,
             encoded_data = encoded_data[b:, ...]
             label =label[:b]
 
-            allLosses, allAcc = cpcCriterion(c_feature, encoded_data, label)
+            # Catch 'captured' with '*_'
+            allLosses, allAcc, *_ = cpcCriterion(c_feature, encoded_data, label)
             if clustering is not None:
                 lossCluster = clustering(c_feature, label)
 
@@ -652,6 +684,7 @@ def main(argv):
 
     balance_sampler = None
     if args.balance_type is not None:
+        raise ValueError("Code for balance sampler is missing")
         balance_sampler= get_balance_sampler(args.balance_type,
                                              balance_coeff=args.balance_coeff)
 

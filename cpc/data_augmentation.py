@@ -4,13 +4,17 @@
 # LICENSE file in the root directory of this source tree.
 from typing import Tuple
 import random
+import warnings
 import torch
 import torchaudio
 import numpy as np
 from copy import deepcopy
 from torch.utils.data.dataloader import _SingleProcessDataLoaderIter
-import augment.sox_effects as sox_effects
 
+try:
+    import augment.sox_effects as sox_effects
+except ModuleNotFoundError:
+    warnings.warn('augment not available')
 
 class BandrejectAugment:
     def __init__(self, scaler=1.0):
