@@ -8,7 +8,7 @@
 
 mkdir -p $OUTPUT_DIR
 
-ARGS+=" --pathTrain filelists/ll-0.6k.txt"  # NOTE 0.6k only for debugging; use 6k or 60k
+ARGS+=" --pathTrain filelists/ll-600.txt"  # NOTE 0.6k only for debugging; use 6k or 60k
 ARGS+=" --pathVal filelists/ls-dev-clean.txt"
 ARGS+=" --batchSizeGPU $BATCH_SIZE"
 # ARGS+=" --distributed"
