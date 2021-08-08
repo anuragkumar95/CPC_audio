@@ -272,7 +272,7 @@ class NoAr(nn.Module):
         super(NoAr, self).__init__()
 
     def forward(self, x):
-        return x
+        return [x]
 
 
 class BiDIRARTangled(nn.Module):

@@ -35,15 +35,17 @@ def evalPhoneSegmentation(featureMaker, boundaryDetector, dataLoader, labelKey="
             cFeature = cFeature[0]
         maxRval = 0
 
+        label = torch.cat([label[:, 0].view(-1, 1), label], dim=1)
+        trueBoundaries = torch.where(torch.diff(label.view(-1)) != 0)[0]
+        # Ensure that minibatch boundaries are preserved
+        seqEndIdx = torch.arange(0, encodedData.size(0)*encodedData.size(1) + 1, encodedData.size(1))
+        trueBoundaries = torch.unique(torch.cat((trueBoundaries, seqEndIdx)), sorted=True)
+
         for segmentationParam in segmentationParamRange:
             if onEncodings:
-                predictedBoundaries = boundaryDetector(encodedData, segmentationParam, justSegmenter=True).cpu()
+                predictedBoundaries = boundaryDetector(encodedData, segmentationParam, trueBoundaries, justSegmenter=True).cpu()
             else:
-                predictedBoundaries = boundaryDetector(cFeature, segmentationParam, justSegmenter=True).cpu()
-            trueBoundaries = torch.where(torch.diff(label.view(-1)) != 0)[0]
-            # Ensure that minibatch boundaries are preserved
-            seqEndIdx = torch.arange(0, encodedData.size(0)*encodedData.size(1) + 1, encodedData.size(1))
-            trueBoundaries = torch.unique(torch.cat((trueBoundaries, seqEndIdx)), sorted=True)
+                predictedBoundaries = boundaryDetector(cFeature, segmentationParam, trueBoundaries, justSegmenter=True).cpu()
             
             precisionCounter = 0
             recallCounter = 0
@@ -91,18 +93,16 @@ def run(featureMaker,
     logsVal = evalPhoneSegmentation(featureMaker, boundaryDetector, valLoader, labelKey)
     utils.show_logs("Training stats", logsTrain)
     utils.show_logs("Validation stats", logsVal)
+    for key, value in dict(logsTrain).items():
+        if isinstance(value, np.ndarray):
+            value = value.tolist()
+        logsTrain[key] = value
+    for key, value in dict(logsVal).items():
+        if isinstance(value, np.ndarray):
+            value = value.tolist()
+        logsTrain[key] = value
     utils.save_logs(logsTrain, f"{pathCheckpoint}_logsTrain.json")
     utils.save_logs(logsVal, f"{pathCheckpoint}_logsVal.json")
-
-
-def save_linsep_best_checkpoint(cpc_model_state, classif_net_criterion_state, optimizer_state, 
-                    path_checkpoint):
-
-    state_dict = {"CPCmodel": cpc_model_state,
-                  "classifNetCriterionCombined": classif_net_criterion_state,
-                  "optimizer": optimizer_state}
-
-    torch.save(state_dict, path_checkpoint)
 
 
 def parse_args(argv):
@@ -256,7 +256,7 @@ if __name__ == "__main__":
     #ptvsd.enable_attach(('0.0.0.0', 7310))
     #print("Attach debugger now")
     #ptvsd.wait_for_attach()
-    
+
     torch.multiprocessing.set_start_method('spawn')
     args = sys.argv[1:]
     main(args)
