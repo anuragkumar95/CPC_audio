@@ -4,10 +4,18 @@
 # LICENSE file in the root directory of this source tree.
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from .seq_alignment import collapseLabelChain
 from .custom_layers import EqualizedLinear, EqualizedConv1d
 from ..utils.misc import levenshteinDistance
 
+class Identity(nn.Module):
+
+    def __init__(self, *args):
+        super(Identity, self).__init__()
+
+    def forward(self, x):
+        return x
 
 class FFNetwork(nn.Module):
     def __init__(self, din, dout, dff, dropout):
@@ -48,6 +56,7 @@ class PredictionNetwork(nn.Module):
                  nPredicts,
                  dimOutputAR,
                  dimOutputEncoder,
+                 simMeasure,
                  rnnMode=None,
                  dropout=False,
                  sizeInputSeq=116):
@@ -56,6 +65,7 @@ class PredictionNetwork(nn.Module):
         self.predictors = nn.ModuleList()
         self.RESIDUAL_STD = 0.01
         self.dimOutputAR = dimOutputAR
+        self.simMeasure = simMeasure
 
         self.dropout = nn.Dropout(p=0.5) if dropout else None
         for i in range(nPredicts):
@@ -87,6 +97,8 @@ class PredictionNetwork(nn.Module):
                                        1,
                                        sizeInputSeq,
                                        False))
+            elif rnnMode == 'none':
+                self.predictors.append(Identity())
             else:
                 self.predictors.append(
                     nn.Linear(dimOutputAR, dimOutputEncoder, bias=False))
@@ -114,8 +126,13 @@ class PredictionNetwork(nn.Module):
             if self.dropout is not None:
                 locC = self.dropout(locC)
             locC = locC.view(locC.size(0), 1, locC.size(1), locC.size(2))
-            outK = (locC*candidates[k]).mean(dim=3)
-            out.append(outK)
+            if self.simMeasure == 'dotproduct':
+                outK = (locC*candidates[k]).mean(dim=3)
+            elif self.simMeasure == 'cosine':
+                outK = F.cosine_similarity(locC, candidates[k], dim=3)
+            else:
+                raise NotImplementedError            
+            out.append(outK)       
         return out
 
 
@@ -144,6 +161,7 @@ class CPCUnsupersivedCriterion(BaseCriterion):
                  dimOutputAR,           # Dimension of G_ar
                  dimOutputEncoder,      # Dimension of the convolutional net
                  negativeSamplingExt,   # Number of negative samples to draw
+                 simMeasure,
                  mode=None,
                  rnnMode=False,
                  dropout=False,
@@ -161,7 +179,7 @@ class CPCUnsupersivedCriterion(BaseCriterion):
             self.speakerEmb = None
 
         self.wPrediction = PredictionNetwork(
-            nPredicts, dimOutputAR, dimOutputEncoder, rnnMode=rnnMode,
+            nPredicts, dimOutputAR, dimOutputEncoder, simMeasure=simMeasure, rnnMode=rnnMode,
             dropout=dropout, sizeInputSeq=sizeInputSeq - nPredicts)
         self.nPredicts = nPredicts
         self.negativeSamplingExt = negativeSamplingExt
@@ -263,8 +281,8 @@ class CPCUnsupersivedCriterion(BaseCriterion):
             _, predsIndex = locPreds.max(1)
             outAcc[k] += torch.sum(predsIndex == labelLoss).float().view(1, -1)
 
-        return torch.cat(outLosses, dim=1), \
-            torch.cat(outAcc, dim=1) / (windowSize * batchSize), \
+        return [torch.cat(outLosses, dim=1)], \
+            [torch.cat(outAcc, dim=1) / (windowSize * batchSize)], \
                 captureRes
 
 

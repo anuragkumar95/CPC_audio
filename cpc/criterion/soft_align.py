@@ -157,6 +157,7 @@ class CPCUnsupersivedCriterion(BaseCriterion):
                  dimOutputAR,           # Dimension of G_ar
                  dimOutputEncoder,      # Dimension of the convolutional net
                  negativeSamplingExt,   # Number of negative samples to draw
+                 simMeasure,
                  reductionFactor,       # Subsampling factor at each CPC head
                  numLevels,             # Number of CPC heads
                  smartPooling,
@@ -239,6 +240,8 @@ class CPCUnsupersivedCriterion(BaseCriterion):
         self.smartPooling = smartPooling
         self.stepReduction = stepReduction
         self.rnnMode = rnnMode
+        self.simMeasure = simMeasure
+        self.EPS = 1e-12
 
     def sampleClean(self, encodedData, windowSizes, maxWindowSize, level):
 
@@ -380,10 +383,22 @@ class CPCUnsupersivedCriterion(BaseCriterion):
         # gt_and_neg = torch.cat((pred_windows, sampledData.permute(0, 2, 3, 1)), 3)
 
         # BS x L x NumNegs x NumPreds
-        neg_log_scores = sampledNegs @ predictions / sampledNegs.size(-1)
-
+        neg_log_scores = sampledNegs @ predictions
         # BS x L x W x NumPreds
-        pos_log_scores = positives @ predictions / sampledNegs.size(-1)
+        pos_log_scores = positives @ predictions
+        if self.simMeasure == 'dotproduct':
+            neg_log_scores /= sampledNegs.size(-1)
+            pos_log_scores /= sampledNegs.size(-1)
+        elif self.simMeasure == 'cosine':
+            normNegs = torch.sqrt((sampledNegs * sampledNegs).sum(-1))
+            normPos = torch.sqrt((positives * positives).sum(-1))
+            normPreds = torch.sqrt((predictions * predictions).sum(-2))
+            neg_log_scores /= (normNegs.unsqueeze(3) + self.EPS)
+            neg_log_scores /= (normPreds.unsqueeze(2) + self.EPS)
+            pos_log_scores /= (normPos.unsqueeze(3) + self.EPS)
+            pos_log_scores /= (normPreds.unsqueeze(2) + self.EPS)
+        else:
+            raise NotImplementedError
 
         # We now want ot get a matrix BS x L x W x NumPreds
         # in which each entry is the log-softmax of predicting a window elem in contrast to al negs

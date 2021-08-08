@@ -38,6 +38,7 @@ def getCriterion(args, downsampling, nSpeakers, nPhones):
                                                         args.hiddenGar,
                                                         args.hiddenEncoder,
                                                         args.negativeSamplingExt,
+                                                        simMeasure=args.simMeasure,
                                                         allowed_skips_beg=args.CPCCTCSkipBeg,
                                                         allowed_skips_end=args.CPCCTCSkipEnd,
                                                         predict_self_loop=args.CPCCTCSelfLoop,
@@ -64,6 +65,7 @@ def getCriterion(args, downsampling, nSpeakers, nPhones):
                                                         args.hiddenGar,
                                                         args.hiddenEncoder,
                                                         args.negativeSamplingExt,
+                                                        simMeasure=args.simMeasure,
                                                         mode=args.cpc_mode,
                                                         rnnMode=args.rnnMode,
                                                         dropout=args.dropout,
@@ -580,7 +582,6 @@ def main(args):
         #     (but this is internal-CPC-score best anyway, which is quite vague)
         cpcModel, args.hiddenGar, args.hiddenEncoder = \
             fl.loadModel(args.load, load_nullspace=args.nullspace, updateConfig=updateConfig)
-        CPChiddenGar, CPChiddenEncoder = args.hiddenGar, args.hiddenEncoder            
 
         if args.gru_level is not None and args.gru_level > 0:
             # Keep hidden units at LSTM layers on sequential batches
@@ -597,7 +598,7 @@ def main(args):
 
         cpcModel = model.CPCModel(encoderNet, arNet)
 
-        CPChiddenGar, CPChiddenEncoder = cpcModel.gAR.getDimOutput(), cpcModel.gEncoder.getDimOutput()
+    CPChiddenGar, CPChiddenEncoder = args.hiddenGar, args.hiddenEncoder
 
     batchSize = args.nGPU * args.batchSizeGPU
     cpcModel.supervised = args.supervised

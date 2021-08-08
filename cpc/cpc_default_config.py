@@ -22,7 +22,11 @@ def set_default_cpc_config(parser):
                        help='Hidden dimension of the auto-regressive network')
     group.add_argument('--nPredicts', type=int, default=12,
                        help='Number of steps to predict.')
-    
+
+    group.add_argument('--simMeasure', type=str, default='dotproduct',
+                       choices=['dotproduct', 'cosine'],
+                       help="Similarity measure to us as logits for the contrastive loss")
+
     group.add_argument('--CPCCTC', action='store_true')
     group.add_argument('--CPCCTCNumMatched', type=int, default=16)
     group.add_argument('--CPCCTCSkipBeg', type=int, default=0)
@@ -37,7 +41,7 @@ def set_default_cpc_config(parser):
     group.add_argument('--limitNegsInBatch', type=int, default=0,
                        help='Limit the number of different seqs from whithc neg samples are taken.')
 
-    group.add_argument('--CPCCTCNumLevels', type=int, default=2)
+    group.add_argument('--CPCCTCNumLevels', type=int, default=1)
     group.add_argument('--CPCCTCReductionFactor', type=int, default=4)
     group.add_argument('--headWeights', type=float, nargs="+", default=[1.0, 1.0])
     group.add_argument('--smartPooling', action='store_true')
@@ -102,7 +106,7 @@ def set_default_cpc_config(parser):
                        help='Number of layers in the autoregressive network.')
     group.add_argument('--rnnMode', type=str, default='transformer',
                        choices=['transformer', 'RNN', 'LSTM', 'linear',
-                                'ffd', 'conv4', 'conv8', 'conv12'],
+                                'ffd', 'conv4', 'conv8', 'conv12', 'none'],
                        help="Architecture to use for the prediction network")
     group.add_argument('--dropout', action='store_true',
                        help="Add a dropout layer at the output of the "

@@ -12,6 +12,12 @@ from copy import deepcopy
 from bisect import bisect_left
 import torch.nn.functional as F
 from scipy.signal import find_peaks
+# import matplotlib.pyplot as plt
+
+def maxMinNorm(x):
+    x -= x.min(-1, keepdim=True)[0]
+    x /= x.max(-1, keepdim=True)[0]
+    return x
 
 def levenshteinDistance(s1, s2):
     if len(s1) > len(s2):
@@ -28,17 +34,25 @@ def levenshteinDistance(s1, s2):
         distances = distances_
     return distances[-1]
 
-def kreukBoundaryDetector(encodedData, prominence, justSegmenter=None):
-    scores = -F.cosine_similarity(encodedData[:, :-1, :], encodedData[:, 1:, :], dim=-1).view(-1)
-    minScore, maxScore = scores.min(), scores.max()
-    scores = (scores - minScore) / (maxScore - minScore)
-    peaks, _ = find_peaks(scores.cpu().numpy(), prominence=prominence)
+def kreukBoundaryDetector(encodedData, prominence, label, justSegmenter=None):
+    scores = -F.cosine_similarity(encodedData[:, :-1, :], encodedData[:, 1:, :], dim=-1)
+    scores = torch.cat([scores[:, 0].view(-1, 1), scores], dim=1)
+    scores = maxMinNorm(scores)
+    peaks, _ = find_peaks(scores.view(-1).cpu().numpy(), prominence=prominence)
     if len(peaks) == 0:
         peaks = torch.tensor([0])
-    peaks = torch.tensor(peaks + 1)
+    peaks = torch.tensor(peaks)
     # Ensure that minibatch boundaries are preserved
     seqEndIdx = torch.arange(0, encodedData.size(0)*encodedData.size(1) + 1, encodedData.size(1))
     peaks = torch.unique(torch.cat((peaks, seqEndIdx)), sorted=True)
+    # plt.plot(scores[0, :].cpu())
+    # peaks = peaks[peaks < 128]
+    # label = label[label < 128]
+    # for peak, label in zip(peaks, label):
+    #     plt.vlines(x=peak.cpu().item(), ymin=0, ymax=1, colors='r', linestyles=':')
+    #     plt.vlines(x=label.cpu().item(), ymin=0, ymax=1, colors='g', linestyles=':')
+    # plt.savefig('scores1')
+    # assert False
     return peaks
 
 def jchBoundaryDetector(encodedData, final_length_factor, minLengthSeq=None, step_reduction=0.2, justSegmenter=False):
