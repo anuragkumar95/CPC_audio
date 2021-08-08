@@ -46,6 +46,7 @@ def set_default_cpc_config(parser):
     group.add_argument('--headWeights', type=float, nargs="+", default=[1.0, 1.0])
     group.add_argument('--smartPooling', action='store_true')
     group.add_argument('--stepReduction', type=float, default=0.2)
+    group.add_argument('--segmentationType', type=str, default='jch')
 
     
     group.add_argument('--negativeSamplingExt', type=int, default=128,
