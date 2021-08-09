@@ -117,8 +117,12 @@ def get_seq_PER(seqLabels, detectedLabels):
     return NeedlemanWunschAlignScore(seqLabels, detectedLabels, -1, -1, 0,
                                      normalize=True)
 
+def getPERSample(data, nKeep=20):
+    pred, labelSeq, blankLabel = data
+    predSeq = beam_search(pred, nKeep, blankLabel)[0][1]
+    return get_seq_PER(labelSeq, predSeq)
 
-def getPER(dataLoader, featureMaker, blankLabel):
+def getPERDataset(dataLoader, featureMaker, blankLabel):
 
     bar = progressbar.ProgressBar(len(dataLoader))
     bar.start()

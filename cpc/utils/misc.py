@@ -335,4 +335,3 @@ class SchedulerCombiner:
             out += f"({index}) {scheduler.__str__()} \n"
         out += ")\n"
         return out
-                                   

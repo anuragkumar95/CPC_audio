@@ -46,5 +46,4 @@ exec python -u cpc/eval/linear_separability.py \
     --pathPhone /pio/gluster/data/ls-train-clean-100/converted_aligned_phones.txt \
     --file_extension .flac \
     --pathCheckpoint $SAVE_DIR \
-    # --get_encoded \
     2>&1 | tee -ai ${SAVE_DIR}/out.txt
