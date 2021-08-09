@@ -197,7 +197,7 @@ class CPCAR(nn.Module):
     def getDimOutput(self):
         return self.heads[0].hidden_size
 
-    def forward(self, x):
+    def forward(self, x, label=None):
         # transformedX = []
 
         if not self.smartPooling:
@@ -229,11 +229,14 @@ class CPCAR(nn.Module):
         for l in range(1, self.numLevels):
             if self.smartPooling:
                 minLengthSeq = max(1, int(round(2* self.minLengthSeqMinusOne / self.reductionFactor**l))) + 1
-                compressedMatrices, compressedLens = jchBoundaryDetector(x, 1 / self.reductionFactor**l, minLengthSeq, self.stepReduction)
-                packedCompressedX = compress_batch(
-                    x, compressedMatrices, compressedLens, pack=True
-                )
-                # transformedX.append(packedCompressedX)
+                if self.segmentationType == 'jch':
+                    compressedMatrices, compressedLens = jchBoundaryDetector(x, 1 / self.reductionFactor**l, minLengthSeq, self.stepReduction, label=label)
+                    packedCompressedX = compress_batch(
+                        x, compressedMatrices, compressedLens, pack=True
+                    )
+                elif self.segmentationType == 'jhu':
+                    xPadded, compressedMatrices, compressedLens = jhuBoundaryDetector(x)
+                    packedCompressedX = torch.nn.utils.rnn.pack_padded_sequence(xPadded, compressedLens, batch_first=True, enforce_sorted=False)
                 packedX, packedH = self.heads[l](packedCompressedX, self.hidden[l])
                 o = decompress_padded_batch(packedX, compressedMatrices)
                 outs.append({
@@ -341,15 +344,17 @@ class CPCModel(nn.Module):
 
     def __init__(self,
                  encoder,
-                 AR):
+                 AR,
+                 label=None):
 
         super(CPCModel, self).__init__()
         self.gEncoder = encoder
         self.gAR = AR
+        self.label = label
 
     def forward(self, batchData, label):
         encodedData = self.gEncoder(batchData).permute(0, 2, 1)
-        cFeature = self.gAR(encodedData)
+        cFeature = self.gAR(encodedData) if self.label is None else self.gAR(encodedData, label)
         return cFeature, encodedData, label
 
 class CPCModelNullspace(nn.Module):
