@@ -43,9 +43,9 @@ def evalPhoneSegmentation(featureMaker, boundaryDetector, dataLoader, labelKey="
 
         for segmentationParam in segmentationParamRange:
             if onEncodings:
-                predictedBoundaries = boundaryDetector(encodedData, segmentationParam, trueBoundaries, justSegmenter=True).cpu()
+                predictedBoundaries = boundaryDetector(encodedData, segmentationParam, justSegmenter=True).cpu()
             else:
-                predictedBoundaries = boundaryDetector(cFeature, segmentationParam, trueBoundaries, justSegmenter=True).cpu()
+                predictedBoundaries = boundaryDetector(cFeature, segmentationParam, justSegmenter=True).cpu()
             
             precisionCounter = 0
             recallCounter = 0

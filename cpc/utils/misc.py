@@ -34,7 +34,7 @@ def levenshteinDistance(s1, s2):
         distances = distances_
     return distances[-1]
 
-def kreukBoundaryDetector(encodedData, prominence, label, justSegmenter=None):
+def kreukBoundaryDetector(encodedData, prominence, justSegmenter=None):
     scores = -F.cosine_similarity(encodedData[:, :-1, :], encodedData[:, 1:, :], dim=-1)
     scores = torch.cat([scores[:, 0].view(-1, 1), scores], dim=1)
     scores = maxMinNorm(scores)
