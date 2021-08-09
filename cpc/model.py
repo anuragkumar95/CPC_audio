@@ -170,7 +170,8 @@ def sequence_segmenter(encodedData, final_lengt_factor, step_reduction=0.2):
         sum2 = (feat_csum2.index_select(0, ends) - feat_csum2.index_select(0, begs))
         num_elem = (ends-begs).float().unsqueeze(1)
 
-        diffs = F.pad(torch.sqrt(((sum2/ num_elem - (sum1/ num_elem)**2) ).mean(1)), (1,1), value=1e10)
+        diffs = F.pad(torch.sqrt(((sum2/ num_elem - (sum1/ num_elem)**2) ).mean(1)) * num_elem.squeeze(1),
+                      (1,1), value=1e10)
 
         num_to_retain = max(final_length, int(idx.shape[-1] * step_reduction))
         _, keep_idx = torch.topk(diffs, num_to_retain)
