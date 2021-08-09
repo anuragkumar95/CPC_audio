@@ -7,7 +7,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from .seq_alignment import collapseLabelChain
 from .custom_layers import EqualizedLinear, EqualizedConv1d
-from ..utils.misc import levenshteinDistance
+from cpc.criterion.seq_alignment import getPERSample, collapseLabelChain
+from torch.multiprocessing import Pool
 
 class Identity(nn.Module):
 
@@ -304,7 +305,7 @@ class SpeakerCriterion(BaseCriterion):
         self.lossCriterion = nn.CrossEntropyLoss()
         self.entropyCriterion = nn.LogSoftmax(dim=1)
 
-    def forward(self, cFeature, otherEncoded, label):
+    def forward(self, cFeature, otherEncoded, label, computeAccuracy=None):
 
         # cFeature.size() : batchSize x seq Size x hidden size
         batchSize = cFeature.size(0)
@@ -327,7 +328,7 @@ class SpeakerDoubleCriterion(BaseCriterion):
         self.lossCriterion = nn.CrossEntropyLoss()
         self.entropyCriterion = nn.LogSoftmax(dim=1)
 
-    def forward(self, cFeature, otherEncoded, label):
+    def forward(self, cFeature, otherEncoded, label, computeAccuracy=None):
 
         # cFeature.size() : batchSize x seq Size x hidden size
         batchSize = cFeature.size(0)
@@ -359,7 +360,7 @@ class PhoneCriterion(BaseCriterion):
         self.lossCriterion = nn.CrossEntropyLoss()
         self.onEncoder = onEncoder
 
-    def forward(self, cFeature, otherEncoded, label):
+    def forward(self, cFeature, otherEncoded, label, computeAccuracy=None):
 
         # cFeature.size() : batchSize x seq Size x hidden size
         if self.onEncoder:
@@ -394,8 +395,6 @@ class CTCPhoneCriterion(BaseCriterion):
             self.PhoneCriterionClassifier = nn.Sequential(*outLayers)
         self.lossCriterion = nn.CTCLoss(blank=nPhones, zero_infinity=True)
         self.onEncoder = onEncoder
-        if onEncoder:
-            raise ValueError("On encoder version not implemented yet")
         self.BLANK_LABEL = nPhones
 
     def getPrediction(self, cFeature):
@@ -403,7 +402,7 @@ class CTCPhoneCriterion(BaseCriterion):
         cFeature = cFeature.contiguous().view(B*S, H)
         return self.PhoneCriterionClassifier(cFeature).view(B, S, -1)
 
-    def forward(self, cFeature, otherEncoded, label):
+    def forward(self, cFeature, otherEncoded, label, computeAccuracy=False):
         if isinstance(cFeature, dict):  # Second head uses smart pooling, therefore variable seqLens
             targetSizePred = cFeature['seqLens']
             cFeature = cFeature['states']
@@ -412,24 +411,27 @@ class CTCPhoneCriterion(BaseCriterion):
             B, S, H = cFeature.size()
             targetSizePred = torch.ones(B, dtype=torch.int64,
                                     device=cFeature.device) * S
-
-        predictions = self.getPrediction(cFeature)
+        if self.onEncoder:
+            predictions = self.getPrediction(otherEncoded)
+        else:
+            predictions = self.getPrediction(cFeature)
         label = label.to(predictions.device)
-        label, sizeLabels = collapseLabelChain(label)
-
-        predictions = torch.nn.functional.log_softmax(predictions, dim=2)
-        predictedPhones = predictions.max(2)[1].detach().cpu()
-        predictedPhones, sizePredictions = collapseLabelChain(predictedPhones)
-
-        avgPER = 0.
-        for i in range(B):
-            avgPER += levenshteinDistance(predictedPhones[i, :sizePredictions[i]], label[i, :sizeLabels[i]].cpu()) / sizeLabels[i]
-        avgPER /= B
-
-        predictions = predictions.permute(1, 0, 2)
-        loss = self.lossCriterion(predictions, label,
+        label, sizeLabels = collapseLabelChain(label)   
+        loss = self.lossCriterion(torch.nn.functional.log_softmax(predictions, dim=2).permute(1, 0, 2), label,
                                   targetSizePred, sizeLabels).view(1, -1)
-
+        avgPER = 0.
+        if computeAccuracy:      
+            predictions = torch.nn.functional.softmax(predictions, dim=2).cpu().numpy()
+            label = label.cpu().numpy()
+            sizeLabels = sizeLabels.cpu().numpy()
+            targetSizePred = targetSizePred.cpu().numpy()
+            dataPER = [(predictions[b][:targetSizePred[b]].reshape(targetSizePred[b], -1), 
+                        label[b][:sizeLabels[b]].reshape(-1).tolist(), 
+                        self.BLANK_LABEL) for b in range(B)]
+            with Pool(B) as p:
+                poolData = p.map(getPERSample, dataPER)
+            avgPER = sum([x for x in poolData]) / B
+            print("\tPER in batch: ", avgPER)
         return loss, avgPER * torch.ones(1, 1, device=loss.device)
 
 

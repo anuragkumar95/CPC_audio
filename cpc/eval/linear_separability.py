@@ -11,6 +11,7 @@ import numpy as np
 from pathlib import Path
 from copy import deepcopy
 import os
+import tqdm
 
 import cpc.criterion as cr
 import cpc.feature_loader as fl
@@ -24,10 +25,12 @@ def train_step(feature_maker, criterion, data_loader, optimizer, CPCLevel, label
     if feature_maker.optimize:
         feature_maker.train()
     criterion.train()
-
-    logs = {"locLoss_train": 0,  "locAcc_train": 0}
-
-    for step, fulldata in enumerate(data_loader):
+    computeAccuracy = not isinstance(criterion.module, cr.CTCPhoneCriterion)
+    if computeAccuracy:
+        logs = {"locLoss_train": 0,  "locAcc_train": 0}
+    else:
+        logs = {"locLoss_train": 0}
+    for step, fulldata in tqdm.tqdm(enumerate(data_loader)):
 
         optimizer.zero_grad()
         batch_data, label_data = fulldata
@@ -52,7 +55,8 @@ def train_step(feature_maker, criterion, data_loader, optimizer, CPCLevel, label
         optimizer.step()
 
         logs["locLoss_train"] += np.asarray([all_losses.mean().item()])
-        logs["locAcc_train"] += np.asarray([all_acc.mean().item()])
+        if computeAccuracy:
+            logs["locAcc_train"] += np.asarray([all_acc.mean().item()])
 
     logs = utils.update_logs(logs, step)
     logs["iter"] = step
@@ -60,14 +64,14 @@ def train_step(feature_maker, criterion, data_loader, optimizer, CPCLevel, label
     return logs
 
 
-def val_step(feature_maker, criterion, data_loader, CPCLevel, label_key="speaker", centerpushSettings=None):
-
+def val_step(feature_maker, criterion, data_loader, CPCLevel, computeAccuracy, label_key="speaker", centerpushSettings=None):
     feature_maker.eval()
     criterion.eval()
-    logs = {"locLoss_val": 0,  "locAcc_val": 0}
-
-    for step, fulldata in enumerate(data_loader):
-
+    if computeAccuracy:
+        logs = {"locLoss_val": 0,  "locAcc_val": 0}
+    else:
+        logs = {"locLoss_val": 0}
+    for step, fulldata in tqdm.tqdm(enumerate(data_loader)):
         with torch.no_grad():
             batch_data, label_data = fulldata
             label = label_data[label_key]
@@ -77,13 +81,11 @@ def val_step(feature_maker, criterion, data_loader, CPCLevel, label_key="speaker
                 centers, pushDeg = centerpushSettings
                 c_feature = utils.pushToClosestForBatch(c_feature, centers, deg=pushDeg)
                 encoded_data = utils.pushToClosestForBatch(encoded_data, centers, deg=pushDeg)
-            all_losses, all_acc = criterion(c_feature, encoded_data, label)
-
+            all_losses, all_acc = criterion(c_feature, encoded_data, label, computeAccuracy)
             logs["locLoss_val"] += np.asarray([all_losses.mean().item()])
-            logs["locAcc_val"] += np.asarray([all_acc.mean().item()])
-
+            if computeAccuracy:
+                logs["locAcc_val"] += np.asarray([all_acc.mean().item()])
     logs = utils.update_logs(logs, step)
-
     return logs
 
 
@@ -108,7 +110,11 @@ def run(feature_maker,
 
         logs_train = train_step(feature_maker, criterion, train_loader,
                                 optimizer, CPCLevel, label_key=label_key, centerpushSettings=centerpushSettings)
-        logs_val = val_step(feature_maker, criterion, val_loader, CPCLevel, label_key=label_key, centerpushSettings=centerpushSettings)
+        computeValAccuracy = not isinstance(criterion.module, cr.CTCPhoneCriterion) or epoch == n_epochs - 1
+        logs_val = val_step(feature_maker, criterion, val_loader, 
+                            CPCLevel, 
+                            computeAccuracy=computeValAccuracy,
+                            label_key=label_key, centerpushSettings=centerpushSettings)
 
         print('')
         print('_'*50)
@@ -119,7 +125,7 @@ def run(feature_maker,
         print('_'*50)
         print('')
 
-        if logs_val["locAcc_val"] > best_acc:
+        if computeValAccuracy and logs_val["locAcc_val"] > best_acc:
             best_state = deepcopy(fl.get_module(feature_maker).state_dict())
             best_acc = logs_val["locAcc_val"]
 
@@ -495,7 +501,8 @@ def main(argv):
         centerpushSettings = (centers, args.centerpushDeg)
     else:
         centerpushSettings = None
-
+    print("Training dataset %d batches, Validation dataset %d batches, batch size %d" %
+            (len(train_loader), len(val_loader), batch_size))
     run(model, criterion, train_loader, val_loader, optimizer, logs,
         args.n_epoch, args.pathCheckpoint, args.CPCLevel if args.CTC else 0, 
         label_key=label_key, centerpushSettings=centerpushSettings)
