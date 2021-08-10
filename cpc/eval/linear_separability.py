@@ -30,6 +30,8 @@ def train_step(feature_maker, criterion, data_loader, optimizer):
 
         optimizer.zero_grad()
         batch_data, label = fulldata
+        # The data has two augmentations of itself, only use the first one
+        batch_data = batch_data[:, 0, :, :]
         c_feature, encoded_data, _ = feature_maker(batch_data, None)
         if not feature_maker.optimize:
             c_feature, encoded_data = c_feature.detach(), encoded_data.detach()
@@ -57,6 +59,8 @@ def val_step(feature_maker, criterion, data_loader):
 
         with torch.no_grad():
             batch_data, label = fulldata
+            # The data has two augmentations of itself, only use the first one
+            batch_data = batch_data[:, 0, :, :]
             c_feature, encoded_data, _ = feature_maker(batch_data, None)
             all_losses, all_acc = criterion(c_feature, encoded_data, label)
 
