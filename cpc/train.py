@@ -659,10 +659,13 @@ def main(argv):
             scheduler = utils.SchedulerCombiner([scheduler_ramp, scheduler],
                                                 [0, args.schedulerRamp])
     if scheduler is not None:
+        print(f'Redoing {len(logs["epoch"])} scheduler steps')
         for i in range(len(logs["epoch"])):
             scheduler.step()
 
     print('args.local_rank: ' + str(args.local_rank))
+    print("cpcModel", cpcModel)
+    print("cpcCriterion", cpcCriterion)
     if args.distributed:
         cpcModel = torch.nn.parallel.DistributedDataParallel(cpcModel, device_ids=[
                                                              args.local_rank], output_device=args.local_rank, broadcast_buffers=True)

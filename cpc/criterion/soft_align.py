@@ -147,6 +147,8 @@ class PredictionNetwork(nn.Module):
 
 
 class CPCUnsupersivedCriterion(BaseCriterion):
+    def extra_repr(self):
+        return "CPCCTC criterion\n" + super().extra_repr()
 
     def __init__(self,
                  nPredicts,             # Number of predictions
