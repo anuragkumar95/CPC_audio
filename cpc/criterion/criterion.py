@@ -385,14 +385,13 @@ class CTCPhoneCriterion(BaseCriterion):
     def __init__(self, dimEncoder, nPhones, onEncoder, nLayers=1, forbid_blank=False):
 
         super(CTCPhoneCriterion, self).__init__()
-        self.linear = self.nLayers==1
+        self.linear = (nLayers == 1)
         if self.linear:
             self.PhoneCriterionClassifier = nn.Linear(dimEncoder, nPhones + 1)
         else:
             self.lstm = torch.nn.LSTM(dimEncoder, dimEncoder, num_layers=1, batch_first=True)
             self.PhoneCriterionClassifier = torch.nn.Conv1d(
                 dimEncoder, nPhones + 1, 8, stride=4)
-            self.relu = torch.nn.ReLU()
         self.lossCriterion = nn.CTCLoss(blank=nPhones, zero_infinity=True)
         self.onEncoder = onEncoder
         self.BLANK_LABEL = nPhones
@@ -433,16 +432,12 @@ class CTCPhoneCriterion(BaseCriterion):
                 -1e4 * 
                 (torch.arange(self.BLANK_LABEL+1, device=predictions.device) == self.BLANK_LABEL
                 ).float().view(1, 1, self.BLANK_LABEL+1))
-<<<<<<< HEAD
         predictions = torch.nn.functional.log_softmax(predictions, dim=2)
-=======
->>>>>>> 5167bf0311d3fe377dc82d70a9431701bbaa487e
         label = label.to(predictions.device)
         label, sizeLabels = collapseLabelChain(label)   
         loss = self.lossCriterion(predictions.permute(1, 0, 2), label,
                                   targetSizePred, sizeLabels).view(1, -1)
         avgPER = 0.
-<<<<<<< HEAD
         if computeAccuracy:      
             predictedPhones = predictions.max(2)[1].detach().cpu()
             predictedPhones, sizePredictions = collapseLabelChain(predictedPhones)
@@ -453,16 +448,6 @@ class CTCPhoneCriterion(BaseCriterion):
                 dataPER.append((
                     predictedPhone, label[b, :sizeLabels[b]].cpu()
                 ))
-=======
-        if computeAccuracy: 
-            predictions = torch.nn.functional.softmax(predictions, dim=2).cpu().numpy()
-            label = label.cpu().numpy()
-            sizeLabels = sizeLabels.cpu().numpy()
-            targetSizePred = targetSizePred.cpu().numpy()
-            dataPER = [(predictions[b][:targetSizePred[b]].reshape(targetSizePred[b], -1), 
-                        label[b][:sizeLabels[b]].reshape(-1).tolist(), 
-                        self.BLANK_LABEL) for b in range(B)]
->>>>>>> 5167bf0311d3fe377dc82d70a9431701bbaa487e
             with Pool(B) as p:
                 poolData = p.map(levenshteinDistance, dataPER)
             avgPER = sum([x / sizeLabels[b] for b, x in enumerate(poolData)]) / B
