@@ -250,6 +250,8 @@ def parse_args(argv):
                         " compute the phone separability.")
     parser.add_argument('--CTC', action='store_true',
                         help="Use the CTC loss (for phone separability only)")
+    parser.add_argument('--CTC_forbid_blank', action='store_true',
+                        help="forbid lank usage in CTC")
     parser.add_argument('--pathCheckpoint', type=str, default='out',
                         help="Path of the output directory where the "
                         " checkpoints should be dumped.")
@@ -325,7 +327,6 @@ def parse_args(argv):
 
 
 def main(argv):
-
     args = parse_args(argv)
     logs = {"epoch": [], "iter": [], "saveStep": args.save_step}
     load_criterion = False
@@ -426,7 +427,9 @@ def main(argv):
         else:
             print(f"Running phone separability with CTC loss")
             criterion = cr.CTCPhoneCriterion(dim_features,
-                                             n_phones, args.get_encoded)
+                                             n_phones, 
+                                             args.get_encoded,
+                                             forbid_blank=args.CTC_forbid_blank)
     else:
         label_key = 'speaker'
         print(f"Running speaker separability")
@@ -434,6 +437,10 @@ def main(argv):
             criterion = cr.SpeakerDoubleCriterion(dim_features, dim_inter, len(speakers))
         else:
             criterion = cr.SpeakerCriterion(dim_features, len(speakers))
+    
+    print(model)
+    print(criterion)
+    
     criterion.cuda()
     criterion = torch.nn.DataParallel(criterion, device_ids=range(args.nGPU))
 
