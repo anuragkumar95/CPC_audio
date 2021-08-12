@@ -382,7 +382,7 @@ class PhoneCriterion(BaseCriterion):
 
 class CTCPhoneCriterion(BaseCriterion):
 
-    def __init__(self, dimEncoder, nPhones, onEncoder, nLayers=1):
+    def __init__(self, dimEncoder, nPhones, onEncoder, nLayers=1, forbid_blank=False):
 
         super(CTCPhoneCriterion, self).__init__()
         if nLayers == 1:
@@ -396,6 +396,10 @@ class CTCPhoneCriterion(BaseCriterion):
         self.lossCriterion = nn.CTCLoss(blank=nPhones, zero_infinity=True)
         self.onEncoder = onEncoder
         self.BLANK_LABEL = nPhones
+        self.forbid_blank = forbid_blank
+
+    def extra_repr(self):
+        return f"CTCPhoneCriterion(..., onEncoder={self.onEncoder}, forbid_blank={self.forbid_blank})"
 
     def getPrediction(self, cFeature):
         B, S, H = cFeature.size()
@@ -415,12 +419,17 @@ class CTCPhoneCriterion(BaseCriterion):
             predictions = self.getPrediction(otherEncoded)
         else:
             predictions = self.getPrediction(cFeature)
+        if self.forbid_blank:
+            predictions += (
+                -1e4 * 
+                (torch.arange(self.BLANK_LABEL+1, device=predictions.device) == self.BLANK_LABEL
+                ).float().view(1, 1, self.BLANK_LABEL+1))
         label = label.to(predictions.device)
         label, sizeLabels = collapseLabelChain(label)   
         loss = self.lossCriterion(torch.nn.functional.log_softmax(predictions, dim=2).permute(1, 0, 2), label,
                                   targetSizePred, sizeLabels).view(1, -1)
         avgPER = 0.
-        if computeAccuracy:      
+        if computeAccuracy: 
             predictions = torch.nn.functional.softmax(predictions, dim=2).cpu().numpy()
             label = label.cpu().numpy()
             sizeLabels = sizeLabels.cpu().numpy()
