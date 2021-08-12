@@ -19,7 +19,8 @@ def maxMinNorm(x):
     x /= x.max(-1, keepdim=True)[0]
     return x
 
-def levenshteinDistance(s1, s2):
+def levenshteinDistance(data):
+    s1, s2 = data
     if len(s1) > len(s2):
         s1, s2 = s2, s1
 
@@ -45,14 +46,6 @@ def kreukBoundaryDetector(encodedData, prominence, justSegmenter=None):
     # Ensure that minibatch boundaries are preserved
     seqEndIdx = torch.arange(0, encodedData.size(0)*encodedData.size(1) + 1, encodedData.size(1))
     peaks = torch.unique(torch.cat((peaks, seqEndIdx)), sorted=True)
-    # plt.plot(scores[0, :].cpu())
-    # peaks = peaks[peaks < 128]
-    # label = label[label < 128]
-    # for peak, label in zip(peaks, label):
-    #     plt.vlines(x=peak.cpu().item(), ymin=0, ymax=1, colors='r', linestyles=':')
-    #     plt.vlines(x=label.cpu().item(), ymin=0, ymax=1, colors='g', linestyles=':')
-    # plt.savefig('scores1')
-    # assert False
     return peaks
 
 def jchBoundaryDetector(encodedData, final_length_factor, minLengthSeq=None, step_reduction=0.2, justSegmenter=False, label=None):
@@ -78,7 +71,8 @@ def jchBoundaryDetector(encodedData, final_length_factor, minLengthSeq=None, ste
             sum2 = (feat_csum2.index_select(0, ends) - feat_csum2.index_select(0, begs))
             num_elem = (ends-begs).float().unsqueeze(1)
 
-            diffs = F.pad(torch.sqrt(((sum2/ num_elem - (sum1/ num_elem)**2) ).mean(1)), (1,1), value=1e10)
+            diffs = F.pad(torch.sqrt(((sum2/ num_elem - (sum1/ num_elem)**2) ).mean(1)) * num_elem.squeeze(1),
+                      (1,1), value=1e10)
 
             num_to_retain = max(final_length, int(idx.shape[-1] * step_reduction))
             _, keep_idx = torch.topk(diffs, num_to_retain)
