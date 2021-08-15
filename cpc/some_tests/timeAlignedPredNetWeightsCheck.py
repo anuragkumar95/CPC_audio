@@ -206,9 +206,9 @@ predLengths = featc[:,:,-1]  # like with option to pass detached lengths to pred
 # predictors #0, #1, #2, #3
 # standard deviations for predictions 1,2,3: 0.5, sqrt(0.5^2 * 2)=0.7071, sqrt(0.5^2 * 3)=0.866, 
 #                                            which serve as exponent denominator multipliers
-# 1st prediction (exp 0.5): 0.3012, 0.4493, 0.0608, 0.0082
-# 2nd prediction (exp sqrt(0.5^2 * 2)=0.7071): 0.1832, 0.7536, 0.3226, 0.0784
-# 3rd prediction (exp sqrt(0.5^2 * 3)=0.866): 0.1251, 0.397, 0.7938, 0.2502
+# 1st prediction (exp 1/0.5=2): 0.3012, 0.4493, 0.0608, 0.0082
+# 2nd prediction (exp 1/sqrt(0.5^2 * 2)=1/0.7071=1.4142): 0.1832, 0.7536, 0.3226, 0.0784
+# 3rd prediction (exp 1/sqrt(0.5^2 * 3)=1/0.866=1.1547): 0.1251, 0.397, 0.7938, 0.2502
 
 print(featc.shape)
 

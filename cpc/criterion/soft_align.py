@@ -434,7 +434,9 @@ class TimeAlignedPredictionNetwork(nn.Module):
             maxSeenDist = torch.tensor(1.5).to(lengthsDists.device).repeat(lengthsDists.shape[0]).view(-1,1,1,1)
             if self.modelFrameNormalsSigma is not None:  # generalized
                 maxSeenDist = (self.seenDistMult*normalsStdevs).view(-1,1,1,1)  # seenDistMult * sigma needs to be at least 0.5001 (maybe better 1) for 1-long predictions
-                # ^ this param is actually not needed, increasing sigma has same effect in this case 
+                # ^ this param (seenDistMult) is actually not needed, increasing sigma has same effect in this case 
+                # [!] seen dist is capped at 0.6 (lower border) to avoid situations where no predictor is within the range (dist <= 0.5 + numerical stuff and avoiding weird things with =0.5)
+                maxSeenDist = torch.max(maxSeenDist, torch.tensor(0.6))
                 if self.debug:
                     print("normalsStdevs", normalsStdevs.shape, normalsStdevs if normalsStdevs.numel() < 100 else "<tensor big>")
             weights = torch.clamp(maxSeenDist - lengthsDists, min=0)
