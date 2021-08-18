@@ -47,9 +47,8 @@ class AudioBatchData(Dataset):
         """
         self.MAX_SIZE_LOADED = MAX_SIZE_LOADED
         self.nProcessLoader = nProcessLoader
-        self.dbPath = Path(path)
         self.sizeWindow = sizeWindow
-        self.seqNames = [(s, self.dbPath / x) for s, x in seqNames]
+        self.seqNames = [(s, Path(x)) for s, x in seqNames]
         #self.reload_pool = Pool(nProcessLoader)
         self.reload_pool = dummy.Pool(nProcessLoader)
 
@@ -431,10 +430,10 @@ def extractLength(couple):
     return info.num_frames
 
 
-def findAllSeqs(dirName,
-                extension='.flac',
+def findAllSeqs(dirNames,
+                extension=['.flac'],
                 loadCache=False,
-                speaker_level=1):
+                speakerLevel=1):
     r"""
     Lists all the sequences with the given extension in the dirName directory.
     Output:
@@ -469,37 +468,43 @@ def findAllSeqs(dirName,
     organization of the dataset.
 
     """
-    cache_path = os.path.join(dirName, '_seqs_cache.txt')
-    if loadCache:
-        try:
-            outSequences, speakers = torch.load(cache_path)
-            print(f'Loaded from cache {cache_path} successfully')
-            return outSequences, speakers
-        except OSError as err:
-            print(f'Ran in an error while loading {cache_path}: {err}')
-        print('Could not load cache, rebuilding')
-
-    if dirName[-1] != os.sep:
-        dirName += os.sep
-    prefixSize = len(dirName)
-    speakersTarget = {}
     outSequences = []
-    #for root, dirs, filenames in tqdm.tqdm(os.walk(dirName)):
-    for root, dirs, filenames in tqdm.tqdm(os.walk(dirName, followlinks=True)):
-        filtered_files = [f for f in filenames if f.endswith(extension)]
+    outSpeakers = []
+    speakersTarget = {}
+    for dirName, fileExtension in zip(dirNames, extension):
+        cache_path = os.path.join(dirName, '_seqs_cache.txt')
+        if loadCache:
+            try:
+                sequences, speakers = torch.load(cache_path)
+                print(f'Loaded from cache {cache_path} successfully')
+                outSequences += sequences
+                outSpeakers += speakers
+                continue
+            except OSError as err:
+                print(f'Ran in an error while loading {cache_path}: {err}')
+            print('Could not load cache, rebuilding')
 
-        if len(filtered_files) > 0:
-            speakerStr = (os.sep).join(
-                root[prefixSize:].split(os.sep)[:speaker_level])
-            if speakerStr not in speakersTarget:
-                speakersTarget[speakerStr] = len(speakersTarget)
-            speaker = speakersTarget[speakerStr]
-            for filename in filtered_files:
-                full_path = os.path.join(root[prefixSize:], filename)
-                outSequences.append((speaker, full_path))
-    outSpeakers = [None for x in speakersTarget]
-    for key, index in speakersTarget.items():
-        outSpeakers[index] = key
+        if dirName[-1] != os.sep:
+            dirName += os.sep
+        prefixSize = len(dirName)
+        #for root, dirs, filenames in tqdm.tqdm(os.walk(dirName)):
+        for root, dirs, filenames in tqdm.tqdm(os.walk(dirName, followlinks=True)):
+            filtered_files = [f for f in filenames if f.endswith(fileExtension)]
+
+            if len(filtered_files) > 0:
+                speakerStr = (os.sep).join(
+                    root[prefixSize:].split(os.sep)[:speakerLevel])
+                if speakerStr not in speakersTarget:
+                    speakersTarget[speakerStr] = len(speakersTarget)
+                speaker = speakersTarget[speakerStr]
+                for filename in filtered_files:
+                    full_path = os.path.join(root, filename)
+                    outSequences.append((speaker, full_path))
+    if len(speakersTarget) > 0:
+        speakers = [None for x in speakersTarget]
+        for key, index in speakersTarget.items():
+            speakers[index] = key
+        outSpeakers += speakers
     try:
         torch.save((outSequences, outSpeakers), cache_path)
         print(f'Saved cache file at {cache_path}')
@@ -520,11 +525,12 @@ def parseSeqLabels(pathLabels):
     return output, maxPhone + 1
 
 
-def filterSeqs(pathTxt, seqCouples, percentage=None, totalNum=None):
+def filterSeqs(pathsTxt, seqCouples, percentage=None, totalNum=None):
     assert(percentage is None or totalNum is None)
-    with open(pathTxt, 'r') as f:
-        inSeqs = [p.replace('\n', '') for p in f.readlines()]
-
+    inSeqs = []
+    for pathTxt in pathsTxt:
+        with open(pathTxt, 'r') as f:
+            inSeqs += [p.replace('\n', '') for p in f.readlines()]
     inSeqs.sort()
     seqCouples.sort(key=lambda x: os.path.basename(os.path.splitext(x[1])[0]))
     output, index = [], 0

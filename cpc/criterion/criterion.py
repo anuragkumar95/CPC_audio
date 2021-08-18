@@ -7,8 +7,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from .custom_layers import EqualizedLinear, EqualizedConv1d
 from cpc.criterion.seq_alignment import collapseLabelChain
-from cpc.utils.misc import levenshteinDistance
-from torch.multiprocessing import Pool
 
 class Identity(nn.Module):
 
@@ -243,7 +241,7 @@ class CPCUnsupersivedCriterion(BaseCriterion):
         return "orthoLoss", self.orthoLoss * self.wPrediction.orthoCriterion()
 
     def forward(self, cFeature, encodedData, label, captureOptions=None):
-
+        cFeature = cFeature[0]
         if self.mode == "reverse":
             encodedData = torch.flip(encodedData, [1])
             cFeature = torch.flip(cFeature, [1])
@@ -382,7 +380,7 @@ class PhoneCriterion(BaseCriterion):
 
 class CTCPhoneCriterion(BaseCriterion):
 
-    def __init__(self, dimEncoder, nPhones, onEncoder, nLayers=1, forbid_blank=False):
+    def __init__(self, dimEncoder, nPhones, onEncoder, nLayers=2, forbid_blank=False):
 
         super(CTCPhoneCriterion, self).__init__()
         self.linear = (nLayers == 1)
@@ -438,20 +436,6 @@ class CTCPhoneCriterion(BaseCriterion):
         loss = self.lossCriterion(predictions.permute(1, 0, 2), label,
                                   targetSizePred, sizeLabels).view(1, -1)
         avgPER = 0.
-        if computeAccuracy:      
-            predictedPhones = predictions.max(2)[1].detach().cpu()
-            predictedPhones, sizePredictions = collapseLabelChain(predictedPhones)
-            dataPER = []
-            for b in range(B):
-                predictedPhone = predictedPhones[b, :sizePredictions[b]]
-                predictedPhone = predictedPhone[predictedPhone != self.BLANK_LABEL]
-                dataPER.append((
-                    predictedPhone, label[b, :sizeLabels[b]].cpu()
-                ))
-            with Pool(B) as p:
-                poolData = p.map(levenshteinDistance, dataPER)
-            avgPER = sum([x / sizeLabels[b] for b, x in enumerate(poolData)]) / B
-            print("PER in batch: ", avgPER)
         return loss, avgPER * torch.ones(1, 1, device=loss.device)
 
 

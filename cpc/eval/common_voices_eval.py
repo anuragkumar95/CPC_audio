@@ -273,7 +273,7 @@ def get_per(data):
     p_ = pred[:l_].view(l_, -1).numpy()
     gt_seq = gt[:size_gt].view(-1).tolist()
     predSeq = beam_search(p_, 20, blank_label)[0][1]
-    out = get_seq_PER(gt_seq, predSeq)
+    out = get_seq_PER((gt_seq, predSeq))
     return out
 
 

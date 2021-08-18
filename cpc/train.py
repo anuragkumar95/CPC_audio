@@ -854,16 +854,19 @@ def parseArgs(argv):
     parser = set_default_cpc_config(parser)
 
     group_db = parser.add_argument_group('Dataset')
-    group_db.add_argument('--pathDB', type=str, default=None,
-                          help='Path to the directory containing the '
+    # group_db.add_argument('--pathDB', type=str, default=None,
+    #                       help='Path to the directory containing the '
+    #                       'data.')
+    group_db.add_argument('--pathDB', type=str, nargs="+", default=None,
+                          help='Path(s) to the directory containing the '
                           'data.')
-    group_db.add_argument('--file_extension', type=str, default=".flac",
-                          help="Extension of the audio files in the dataset.")
-    group_db.add_argument('--pathTrain', type=str, default=None,
-                          help='Path to a .txt file containing the list of the '
+    group_db.add_argument('--file_extension', type=str, nargs="+", default=".flac",
+                          help="Extension(s) of the audio files in the dataset(s).")
+    group_db.add_argument('--pathTrain', type=str, nargs="+", default=None,
+                          help='Path(s) to a .txt file containing the list of the '
                           'training sequences.')
-    group_db.add_argument('--pathVal', type=str, default=None,
-                          help='Path to a .txt file containing the list of the '
+    group_db.add_argument('--pathVal', type=str, nargs="+", default=None,
+                          help='Path(s) to a .txt file containing the list of the '
                           'validation sequences.')
     # stuff below for capturing data
     group_db.add_argument('--onlyCapture', action='store_true',

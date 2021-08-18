@@ -30,8 +30,8 @@ rsync --exclude '.*' \
 
 echo $0 "$@" >> ${SAVE_DIR}/out.txt
 exec python -u cpc/train.py \
-  --pathDB /pio/gluster/data/ls-train-clean-100/LibriSpeech/train-clean-100 \
-  --pathTrain /pio/gluster/data/ls-train-clean-100/train_split.txt \
-  --pathVal /pio/gluster/data/ls-train-clean-100/test_split.txt \
-  --file_extension .flac \
+  --pathDB /pio/gluster/data/ls-train-clean-100/LibriSpeech/train-clean-100 /pio/gluster/data/BUCKEYE/clean/all-clean \
+  --pathTrain /pio/gluster/data/ls-train-clean-100/train_split.txt /pio/scratch/1/i325922/data/BUCKEYE/clean/train_split.txt \
+  --pathVal /pio/gluster/data/ls-train-clean-100/test_split.txt /pio/scratch/1/i325922/data/BUCKEYE/clean/test_split.txt \
+  --file_extension .flac .wav \
   "$@" 2>&1 | tee -ai ${SAVE_DIR}/out.txt

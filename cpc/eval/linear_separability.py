@@ -12,13 +12,123 @@ from pathlib import Path
 from copy import deepcopy
 import os
 import tqdm
+import math
 
 import cpc.criterion as cr
 import cpc.feature_loader as fl
 import cpc.utils.misc as utils
 from cpc.dataset import AudioBatchData, findAllSeqs, filterSeqs, parseSeqLabels
 from cpc.model import CPCModelNullspace
+from cpc.criterion.seq_alignment import collapseLabelChain, get_seq_PER
+from torch.multiprocessing import Pool
+# import pandas as pd
 
+
+def getCriterion(args, dim_features, dim_inter, speakers):
+    phoneLabels = None
+    if args.pathPhone is not None:
+
+        phoneLabels, nPhones = parseSeqLabels(args.pathPhone)
+        labelKey = 'phone'
+
+        if not args.CTC:
+            print(f"Running phone separability with aligned phones")
+            criterion = cr.PhoneCriterion(dim_features,
+                                          nPhones, args.get_encoded)
+        else:
+            print(f"Running phone separability with CTC loss")
+            criterion = cr.CTCPhoneCriterion(dim_features,
+                                             nPhones, 
+                                             args.get_encoded,
+                                             nLayers=2,
+                                             forbid_blank=args.CTC_forbid_blank)
+    else:
+        labelKey = 'speaker'
+        print(f"Running speaker separability")
+        if args.mode == "speakers_factorized":
+            criterion = cr.SpeakerDoubleCriterion(dim_features, dim_inter, len(speakers))
+        else:
+            criterion = cr.SpeakerCriterion(dim_features, len(speakers))
+    return criterion, labelKey, phoneLabels
+
+
+def perStep(valLoader,
+            model,
+            criterion,
+            CPCLevel,
+            pathCheckpoint):
+
+    model.eval()
+    criterion.eval()
+
+    avgPER = 0
+    varPER = 0
+    nItems = 0
+
+    # results = []
+
+    print("Starting the PER computation")
+    for step, fulldata in tqdm.tqdm(enumerate(valLoader)):
+        with torch.no_grad():
+            batch_data, label_data = fulldata
+            label = label_data['phone']
+            cFeature, encodedData, _ = model(batch_data, None)
+            cFeature = cFeature[CPCLevel]
+            if isinstance(cFeature, dict):  # Second head uses smart pooling, therefore variable seqLens
+                targetSizePred = cFeature['seqLens']
+                cFeature = cFeature['states']
+                B, _, H = cFeature.size()
+            else:
+                B, S, H = cFeature.size()
+                targetSizePred = torch.ones(B, dtype=torch.int64,
+                                        device=cFeature.device) * S
+            if not criterion.module.linear:
+                targetSizePred = ((targetSizePred - 8) // 4 + 1)
+            if criterion.module.onEncoder:
+                predictions = criterion.module.getPrediction(encodedData)
+            else:
+                predictions = criterion.module.getPrediction(cFeature)
+            if criterion.module.forbid_blank:
+                predictions += (
+                    -1e4 * 
+                    (
+                        torch.arange(criterion.module.BLANK_LABEL + 1, 
+                        device=predictions.device) == criterion.module.BLANK_LABEL
+                    ).float().view(1, 1, criterion.module.BLANK_LABEL + 1))
+            predictions = torch.nn.functional.log_softmax(predictions, dim=2)
+            label = label.to(predictions.device)
+            label, sizeLabels = collapseLabelChain(label)   
+            predictedPhones = predictions.max(2)[1].detach().cpu()
+            predictedPhones, sizePredictions = collapseLabelChain(predictedPhones)
+            # dataPER = []
+            poolData = []
+            for b in range(B):
+                predictedPhone = predictedPhones[b, :sizePredictions[b]]
+                predictedPhone = predictedPhone[predictedPhone != criterion.module.BLANK_LABEL]
+                poolData.append(get_seq_PER((predictedPhone, label[b, :sizeLabels[b]].cpu())))
+                # results.append({
+                #     'step': step,
+                #     'predicted': predictedPhone.tolist(),
+                #     'target': label[b, :sizeLabels[b]].tolist(),
+                #     'PER': poolData[-1]
+                # })
+                # dataPER.append((
+                #     predictedPhone, label[b, :sizeLabels[b]].cpu()
+                # ))
+            # with Pool(B) as p:
+            #     poolData = p.map(get_seq_PER, dataPER)
+            avgPER += sum([x for x in poolData])
+            varPER += sum([x*x for x in poolData])
+            nItems += len(poolData)
+    avgPER /= nItems
+    varPER /= nItems
+    varPER -= avgPER**2
+    print(f"Average PER {avgPER}")
+    print(f"Standard deviation PER {math.sqrt(varPER)}")
+    logs = {"avgPER": avgPER,  "stdPER": math.sqrt(varPER)}
+    results = pd.DataFrame(results)
+    # results.to_csv('PER_results')
+    utils.save_logs(logs, f"{pathCheckpoint}_logsVal.json")
 
 
 def train_step(feature_maker, criterion, data_loader, optimizer, CPCLevel, label_key="speaker", centerpushSettings=None):
@@ -248,6 +358,8 @@ def parse_args(argv):
     parser.add_argument('--pathPhone', type=str, default=None,
                         help="Path to the phone labels. If given, will"
                         " compute the phone separability.")
+    parser.add_argument('--PER', action='store_true',
+                        help="Not train, just compute PER")
     parser.add_argument('--CTC', action='store_true',
                         help="Use the CTC loss (for phone separability only)")
     parser.add_argument('--CTC_forbid_blank', action='store_true',
@@ -313,6 +425,7 @@ def parse_args(argv):
     parser.add_argument('--centerpushDeg', type=float, default=None, help="part of (euclidean) distance to push to the center")
 
     parser.add_argument('--CPCLevel', type=int, default=0, help="")
+    parser.add_argument('--numLayers', type=int, default=2, help="")
 
     args = parser.parse_args(argv)
     if args.nGPU < 0:
@@ -329,7 +442,7 @@ def parse_args(argv):
 def main(argv):
     args = parse_args(argv)
     logs = {"epoch": [], "iter": [], "saveStep": args.save_step}
-    load_criterion = False
+    loadCriterion = True if args.PER else False
 
     seqNames, speakers = findAllSeqs(args.pathDB,
                                      extension=args.file_extension,
@@ -414,29 +527,14 @@ def main(argv):
         nullspace = my_nullspace(speakers_factorized.linearSpeakerClassifier[0].weight)
         model = CPCModelNullspace(model, nullspace)
 
-    phone_labels = None
-    if args.pathPhone is not None:
-
-        phone_labels, n_phones = parseSeqLabels(args.pathPhone)
-        label_key = 'phone'
-
-        if not args.CTC:
-            print(f"Running phone separability with aligned phones")
-            criterion = cr.PhoneCriterion(dim_features,
-                                          n_phones, args.get_encoded)
-        else:
-            print(f"Running phone separability with CTC loss")
-            criterion = cr.CTCPhoneCriterion(dim_features,
-                                             n_phones, 
-                                             args.get_encoded,
-                                             forbid_blank=args.CTC_forbid_blank)
+    phoneLabels = None
+    if loadCriterion:
+        _, _, locArgs = fl.getCheckpointData(os.path.dirname(args.load[0]))
+        criterion, labelKey, phoneLabels = getCriterion(locArgs, dim_features, dim_inter, speakers)
+        state_dict = torch.load(args.load[0], 'cpu')
+        criterion.load_state_dict(state_dict["cpcCriterion"])
     else:
-        label_key = 'speaker'
-        print(f"Running speaker separability")
-        if args.mode == "speakers_factorized":
-            criterion = cr.SpeakerDoubleCriterion(dim_features, dim_inter, len(speakers))
-        else:
-            criterion = cr.SpeakerCriterion(dim_features, len(speakers))
+        criterion, labelKey, phoneLabels = getCriterion(args, dim_features, dim_inter, speakers)
     
     print(model)
     print(criterion)
@@ -456,10 +554,10 @@ def main(argv):
         seq_val = seq_val[:100]
 
     db_train = AudioBatchData(args.pathDB, args.size_window, seq_train,
-                              phone_labels, len(speakers), nProcessLoader=args.n_process_loader,
+                              phoneLabels, len(speakers), nProcessLoader=args.n_process_loader,
                                   MAX_SIZE_LOADED=args.max_size_loaded)
     db_val = AudioBatchData(args.pathDB, args.size_window, seq_val,
-                            phone_labels, len(speakers), nProcessLoader=args.n_process_loader)
+                            phoneLabels, len(speakers), nProcessLoader=args.n_process_loader)
 
     batch_size = args.batchSizeGPU * args.nGPU
 
@@ -468,51 +566,60 @@ def main(argv):
 
     val_loader = db_val.getDataLoader(batch_size, 'sequential', False,
                                       numWorkers=0)
-
-    # Optimizer
-    g_params = list(criterion.parameters())
-    model.optimize = False
-    model.eval()
-    if args.unfrozen:
-        print("Working in full fine-tune mode")
-        g_params += list(model.parameters())
-        model.optimize = True
-    else:
-        print("Working with frozen features")
-        for g in model.parameters():
-            g.requires_grad = False
-
-    optimizer = torch.optim.Adam(g_params, lr=args.lr,
-                                 betas=(args.beta1, args.beta2),
-                                 eps=args.epsilon)
-
-    # Checkpoint directory
-    args.pathCheckpoint = Path(args.pathCheckpoint)
-    args.pathCheckpoint.mkdir(exist_ok=True)
-    args.pathCheckpoint = str(args.pathCheckpoint / "checkpoint")
-
-    with open(f"{args.pathCheckpoint}_args.json", 'w') as file:
-        json.dump(vars(args), file, indent=2)
-
-    if args.centerpushFile:
-        clustersFileExt = args.centerpushFile.split('.')[-1]
-        assert clustersFileExt in ('pt', 'npy', 'txt')
-        if clustersFileExt == 'npy':
-            centers = np.load(args.centerpushFile)
-        elif clustersFileExt == 'txt':
-            centers = np.genfromtxt(args.centerpushFile)
-        elif clustersFileExt == 'pt':  # assuming it's a checkpoint
-            centers = torch.load(args.centerpushFile, map_location=torch.device('cpu'))['state_dict']['Ck']
-            centers = torch.reshape(centers, centers.shape[1:]).numpy()
-        centers = torch.tensor(centers).cuda()
-        centerpushSettings = (centers, args.centerpushDeg)
-    else:
-        centerpushSettings = None
     print("Training dataset %d batches, Validation dataset %d batches, batch size %d" %
-            (len(train_loader), len(val_loader), batch_size))
-    run(model, criterion, train_loader, val_loader, optimizer, logs,
-        args.n_epoch, args.pathCheckpoint, args.CPCLevel if args.CTC else 0, 
-        label_key=label_key, centerpushSettings=centerpushSettings)
+                (len(train_loader), len(val_loader), batch_size))
+    if args.PER:
+        # Checkpoint directory
+        args.pathCheckpoint = Path(args.pathCheckpoint)
+        args.pathCheckpoint.mkdir(exist_ok=True)
+        args.pathCheckpoint = str(args.pathCheckpoint / "PER")
+
+        with open(f"{args.pathCheckpoint}_args.json", 'w') as file:
+            json.dump(vars(args), file, indent=2)
+        perStep(val_loader, model, criterion, args.CPCLevel, args.pathCheckpoint)
+    else:
+        # Optimizer
+        g_params = list(criterion.parameters())
+        model.optimize = False
+        model.eval()
+        if args.unfrozen:
+            print("Working in full fine-tune mode")
+            g_params += list(model.parameters())
+            model.optimize = True
+        else:
+            print("Working with frozen features")
+            for g in model.parameters():
+                g.requires_grad = False
+
+        optimizer = torch.optim.Adam(g_params, lr=args.lr,
+                                    betas=(args.beta1, args.beta2),
+                                    eps=args.epsilon)
+
+        # Checkpoint directory
+        args.pathCheckpoint = Path(args.pathCheckpoint)
+        args.pathCheckpoint.mkdir(exist_ok=True)
+        args.pathCheckpoint = str(args.pathCheckpoint / "checkpoint")
+
+        with open(f"{args.pathCheckpoint}_args.json", 'w') as file:
+            json.dump(vars(args), file, indent=2)
+
+        if args.centerpushFile:
+            clustersFileExt = args.centerpushFile.split('.')[-1]
+            assert clustersFileExt in ('pt', 'npy', 'txt')
+            if clustersFileExt == 'npy':
+                centers = np.load(args.centerpushFile)
+            elif clustersFileExt == 'txt':
+                centers = np.genfromtxt(args.centerpushFile)
+            elif clustersFileExt == 'pt':  # assuming it's a checkpoint
+                centers = torch.load(args.centerpushFile, map_location=torch.device('cpu'))['state_dict']['Ck']
+                centers = torch.reshape(centers, centers.shape[1:]).numpy()
+            centers = torch.tensor(centers).cuda()
+            centerpushSettings = (centers, args.centerpushDeg)
+        else:
+            centerpushSettings = None
+        run(model, criterion, train_loader, val_loader, optimizer, logs,
+            args.n_epoch, args.pathCheckpoint, args.CPCLevel if args.CTC else 0, 
+            label_key=labelKey, centerpushSettings=centerpushSettings)
 
 
 

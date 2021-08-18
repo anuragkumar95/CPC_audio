@@ -87,7 +87,8 @@ def collapseLabelChain(inputLabels):
 
 
 def NeedlemanWunschAlignScore(seq1, seq2, d, m, r, normalize=True):
-
+    if len(seq1) == 0:
+        return 1.0 if normalize else len(seq2)
     N1, N2 = len(seq1), len(seq2)
 
     # Fill up the errors
@@ -113,7 +114,8 @@ def NeedlemanWunschAlignScore(seq1, seq2, d, m, r, normalize=True):
     return res
 
 
-def get_seq_PER(seqLabels, detectedLabels):
+def get_seq_PER(data):
+    seqLabels, detectedLabels = data
     return NeedlemanWunschAlignScore(seqLabels, detectedLabels, -1, -1, 0,
                                      normalize=True)
 

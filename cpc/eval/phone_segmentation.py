@@ -18,7 +18,7 @@ import cpc.feature_loader as fl
 import cpc.utils.misc as utils
 from cpc.dataset import AudioBatchData, findAllSeqs, filterSeqs, parseSeqLabels
 from cpc.model import CPCModelNullspace
-
+# import pandas as pd
 
 def evalPhoneSegmentation(featureMaker, boundaryDetector, dataLoader, labelKey="speaker", onEncodings=True, toleranceInFrames=2):
 
@@ -26,7 +26,8 @@ def evalPhoneSegmentation(featureMaker, boundaryDetector, dataLoader, labelKey="
     logs = {"precision": 0, "recall": 0, "f1": 0, "r": 0}
     EPS = 1e-7
     segmentationParamRange = np.arange(0.01, 0.15, 0.01)
-    
+
+    # results = []
     for step, fulldata in tqdm.tqdm(enumerate(dataLoader)):
         with torch.no_grad():
             batch_data, labelData = fulldata
@@ -35,8 +36,11 @@ def evalPhoneSegmentation(featureMaker, boundaryDetector, dataLoader, labelKey="
             cFeature = cFeature[0]
         maxRval = 0
 
-        label = torch.cat([label[:, 0].view(-1, 1), label], dim=1)
-        trueBoundaries = torch.where(torch.diff(label.view(-1)) != 0)[0]
+        diffs = torch.diff(label, dim=1)
+        phone_changes = torch.cat((torch.ones((label.shape[0], 1), device=label.device), diffs), dim=1)
+        trueBoundaries = torch.nonzero(phone_changes.contiguous().view(-1), as_tuple=True)[0]
+        # label = torch.cat([label[:, 0].view(-1, 1), label], dim=1)
+        # trueBoundaries = torch.where(torch.diff(label.view(-1)) != 0)[0]
         # Ensure that minibatch boundaries are preserved
         seqEndIdx = torch.arange(0, encodedData.size(0)*encodedData.size(1) + 1, encodedData.size(1))
         trueBoundaries = torch.unique(torch.cat((trueBoundaries, seqEndIdx)), sorted=True)
@@ -56,7 +60,13 @@ def evalPhoneSegmentation(featureMaker, boundaryDetector, dataLoader, labelKey="
 
             for trueBoundary in trueBoundaries:
                 minDist = torch.min(torch.abs(predictedBoundaries - trueBoundary))
-                recallCounter += (minDist <= toleranceInFrames)
+                detected = (minDist <= toleranceInFrames)
+                # if not detected:
+                #     results.append({
+                #         'prev': label.view(-1)[trueBoundary - 1],
+                #         'post': label.view(-1)[trueBoundary] 
+                #     })
+                recallCounter += detected
 
             precision = precisionCounter / (len(predictedBoundaries) + EPS)
             recall = recallCounter / (len(trueBoundaries) + EPS)
@@ -71,12 +81,12 @@ def evalPhoneSegmentation(featureMaker, boundaryDetector, dataLoader, labelKey="
                 bestPrecision = precision
                 bestRecall = recall
                 bestF1 = f1
-
         logs["precision"] += bestPrecision.view(1).numpy()
         logs["recall"] += bestRecall.view(1).numpy()
         logs["f1"] += bestF1.view(1).numpy()
         logs["r"] += maxRval.view(1).numpy()
-
+    # results = pd.DataFrame(results)
+    # results.to_csv('not_detected.csv')
     logs = utils.update_logs(logs, step)
 
     return logs
@@ -87,21 +97,23 @@ def run(featureMaker,
         trainLoader,
         valLoader,
         pathCheckpoint,
+        onEncodings,
         labelKey="speaker"):
-    print("Training dataset %d batches, Validation dataset %d batches" % (len(trainLoader), len(valLoader)))
-    logsTrain = evalPhoneSegmentation(featureMaker, boundaryDetector, trainLoader, labelKey)
-    logsVal = evalPhoneSegmentation(featureMaker, boundaryDetector, valLoader, labelKey)
-    utils.show_logs("Training stats", logsTrain)
+    # print("Training dataset %d batches, Validation dataset %d batches" % (len(trainLoader), len(valLoader)))
+    print("Validation dataset %d batches" % len(valLoader))
+    # logsTrain = evalPhoneSegmentation(featureMaker, boundaryDetector, trainLoader, labelKey, onEncodings)
+    logsVal = evalPhoneSegmentation(featureMaker, boundaryDetector, valLoader, labelKey, onEncodings)
+    # utils.show_logs("Training stats", logsTrain)
     utils.show_logs("Validation stats", logsVal)
-    for key, value in dict(logsTrain).items():
-        if isinstance(value, np.ndarray):
-            value = value.tolist()
-        logsTrain[key] = value
+    # for key, value in dict(logsTrain).items():
+        # if isinstance(value, np.ndarray):
+            # value = value.tolist()
+        # logsTrain[key] = value
     for key, value in dict(logsVal).items():
         if isinstance(value, np.ndarray):
             value = value.tolist()
-        logsTrain[key] = value
-    utils.save_logs(logsTrain, f"{pathCheckpoint}_logsTrain.json")
+        logsVal[key] = value
+    # utils.save_logs(logsTrain, f"{pathCheckpoint}_logsTrain.json")
     utils.save_logs(logsVal, f"{pathCheckpoint}_logsVal.json")
 
 
@@ -214,16 +226,17 @@ def main(argv):
         seq_train = seq_train[:1000]
         seq_val = seq_val[:100]
 
-    db_train = AudioBatchData(args.pathDB, args.size_window, seq_train,
-                              phone_labels, len(speakers), nProcessLoader=args.n_process_loader,
-                                  MAX_SIZE_LOADED=args.max_size_loaded)
+    # db_train = AudioBatchData(args.pathDB, args.size_window, seq_train,
+                            #   phone_labels, len(speakers), nProcessLoader=args.n_process_loader,
+                                #   MAX_SIZE_LOADED=args.max_size_loaded)
     db_val = AudioBatchData(args.pathDB, args.size_window, seq_val,
                             phone_labels, len(speakers), nProcessLoader=args.n_process_loader)
 
     batch_size = args.batchSizeGPU * args.nGPU
 
-    train_loader = db_train.getDataLoader(batch_size, "uniform", True,
-                                          numWorkers=0)
+    train_loader = None
+    # train_loader = db_train.getDataLoader(batch_size, "uniform", True,
+                                        #   numWorkers=0)
 
     val_loader = db_val.getDataLoader(batch_size, 'sequential', False,
                                       numWorkers=0)
@@ -232,9 +245,11 @@ def main(argv):
     checkpoint_dir = os.path.dirname(args.load[0])
     checkpoint_no = args.load[0].split('_')[-1][:-3]
     pathCheckpoint = f"{checkpoint_dir}/phoneSeg{args.boundaryDetector}_{checkpoint_no}"
+    if args.get_encoded:
+        pathCheckpoint += '_onEnc'
     pathCheckpoint = Path(pathCheckpoint)
     pathCheckpoint.mkdir(exist_ok=True)
-    pathCheckpoint = str(pathCheckpoint / "checkpoint")
+    pathCheckpoint = str(pathCheckpoint / "checkpoint2")
 
     with open(f"{pathCheckpoint}_args.json", 'w') as file:
         json.dump(vars(args), file, indent=2)
@@ -249,7 +264,7 @@ def main(argv):
         raise NotImplementedError
 
     run(model, boundaryDetector, train_loader, val_loader,
-        pathCheckpoint, labelKey=label_key)
+        pathCheckpoint, args.get_encoded, labelKey=label_key)
 
 
 
