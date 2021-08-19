@@ -209,6 +209,7 @@ def trainStep(dataLoader,
     cpcCriterion.train()
 
     start_time = time.perf_counter()
+    tot_n_examples = 0
     n_examples = 0
     logs, lastlogs = {}, None
     iter = 0
@@ -218,6 +219,7 @@ def trainStep(dataLoader,
 
         b = past.size(0)
         n_examples += b
+        tot_n_examples += b
 
         combined = torch.cat([past, future], dim=0)
         label = torch.cat([label, label])
@@ -256,7 +258,7 @@ def trainStep(dataLoader,
             if (step + 1) % loggingStep == 0:
                 new_time = time.perf_counter()
                 elapsed = new_time - start_time
-                print(f"Update {step + 1}")
+                print(f"Update {step + 1}; Examples processed {tot_n_examples}/{len(dataLoader.dataset)}, average batch size {n_examples/loggingStep}")
                 print(f"elapsed: {elapsed:.1f} s")
                 print(
                     f"{1000.0 * elapsed / loggingStep:.1f} ms per batch, {1000.0 * elapsed / n_examples:.1f} ms / example")
