@@ -28,12 +28,13 @@ The code requires a GPU to run, all of the trainings in the thesis were performe
 5. clone this repo and choose the branch:
    ```
    git clone https://github.com/chorowski-lab/CPC_audio.git
+   cd CPC_audio
    git fetch
    git checkout pp/thesis
    ```
 6. setup this repo as a package from the cpc directory:
    ```
-   cd CPC_audio
+   cd cpc
    python setup.py develop
    ```
 7. download LibriSpeech train-clean-100 data e.g. in .flac file format and place under `LS-TC100` directory
