@@ -28,15 +28,15 @@ The code requires a GPU to run, all of the trainings in the thesis were performe
 5. clone this repo and choose the branch:
    ```
    git clone https://github.com/chorowski-lab/CPC_audio.git
+   cd CPC_audio
    git fetch
    git checkout pp/thesis
    ```
-6. setup this repo as a package from the cpc directory:
+6. setup this repo as a package:
    ```
-   cd CPC_audio
    python setup.py develop
    ```
-7. download LibriSpeech train-clean-100 data e.g. in .flac file format and place under `LS-TC100` directory
+7. download LibriSpeech train-clean-100 data e.g. in .flac file format and place under some path which I will denote `LS-TC100`
 8. download LibriSpeech train-clean-100 test/val split files and phoneme alignment data from https://drive.google.com/drive/folders/1BhJ2umKH3whguxMwifaKtSra0TgAbtfb (as in the original CPC_audio repo). I will denote paths to those files (not directories, but whole paths with file names) as `LS-TC100-TRAIN`, `LS-TC100-VAL` and `LS-ALIGNMENTS`.
 9. Create a directory `TRAINING-ROOT` for training data
 
@@ -89,9 +89,9 @@ Run parameters corresponding to centroid-based denoising which are used in the t
 - `--modPushLossReweightPointsSeparately` - loss reweighting for normalization, r-sep
 - `--modCentermodule` (*) - use module performing online k-means for centroid-based denoising
 - `--modCenter_mode` (*) - mode how to run centroid estimation; onlineKmeans for online k-means used in the thesis
-- `--modCenter_initAfterEpoch` (*) - after which epoch initialize the centroids; needs to be at least 2 epoch after the initial state (begin or checkpoint resumed)
-- `--modCenter_kmeansInitIters` (*) - number regular k-means iterations for initializing the centroids for online k-means
-- `--modCenter_kmeansInitBatches` (*) - number of batches on which regular k-means which initializes online k-means is run; this is a number of points drawn (for each point its whole batch is taken), a few batches can repreat
+- `--modCenter_initAfterEpoch` (*) - after which epoch to initialize the centroids; needs to be at least 2 epoch after the initial state (begin or checkpoint resumed)
+- `--modCenter_kmeansInitIters` (*) - number of regular k-means iterations for initializing the centroids for online k-means
+- `--modCenter_kmeansInitBatches` (*) - number of batches on which regular k-means which initializes online k-means is run; this is a number of points drawn (for each point its whole batch is taken), a few batches can repeat
 - `--modCenter_kmeansReinitEachN` - how frequently in terms of epochs perform online k-means reinitialization
 - `--modCenter_kmeansReinitUpTo` - upper bound on the epoch number when online k-means can be reinitialized, to avoid reinitializing near training end
 - `--modCenter_onlineKmeansBatches` (*) - length of online k-means memory window in batches
@@ -132,7 +132,7 @@ In order to add centroid-based denoising after some epoch, using a trained check
 
 ### PDACPC
 
-Run parameters corresponding to PDACPC which are used in the thesis (with (*) denoting parameters essential to run centroid-based denosing at all) are:
+Run parameters corresponding to PDACPC which are used in the thesis (with (*) denoting parameters essential to run PDACPC at all) are:
 - `modSettings` (*) - enables the use of the modifications from the thesis
 - `nPredictorsTimeAligned` - number of predictors used in PDACPC
 - `modelLengthInARsimple` (*, or `--modelLengthInARconv`) - use regular frame length modeling in terms of phoneme duration for PDACPC model
@@ -149,7 +149,7 @@ Run parameters corresponding to PDACPC which are used in the thesis (with (*) de
 - `ARlengthFirstPredID` - 'ID' variation of PDACPC - change first predictor for identity with current frame; can use with increasing --nPredictorsTimeAligned by 1
 - `ARlengthPredNoise` - standard deviation of normal noise added to predicted lengths in PDACPC - BEFORE MAPPING (e.g. with --modelLengthInARsimple and len 0.4-0.6, 0.1 will result in 0.01 after mapping)
 - `predShowDetachedLengths` - show predicted frame lengths (with stopGradient applied) in predictors input
-- `linsepShowARlengthsInCtx` - show predicted frame lengths with stopGradient applied in context representations fed to linear separability model
+- `linsepShowARlengthsInCtx` - show predicted frame lengths (with stopGradient applied) in context representations fed to linear separability model
 
 Configuration with PDACPC that achieved best scores with random seed:
 
@@ -201,14 +201,16 @@ Jupyter notebook used to create visualization figures in the thesis is under `cp
 
 Code for hierarchical segmentation is present in `cpc/train.py`, `cpc/model.py`, and in the `cpc/segm` folder.
 
+Code for linear deparability automation is present in `cpc/train.py` and `cpc/eval/linear_separability.py`.
+
 ## Tests
 
-Runnable tests for centroid-based denoising and PDACPC modifications are present in the `some_tests` directory.
+Runnable tests for centroid-based denoising and PDACPC modifications are present in the `some_tests` directory (those actually performing short training on small data need to have good variables set in the scripts).
 Tests for hierarchical segmentation of representations are in their source code files when run as python modules.
 
 ## Train logs
 
-Output logs from the trainings results of which are presented in the thesis text can be found under `logs` as an archive file (in the snapshot of this repository uploaded to APD those are removed because of the size - please refer to the full repo branch at https://github.com/chorowski-lab/CPC_audio/tree/pp/thesis). In each log file name prefix, position of the configuration corresponding to this run in the tables presented in the thesis is indicated (with 0- or 1-based numeration of rows and columns); however few of the run file names may contain misleading parts as I made some mistakes in naming - actual parameters are always output in the log file content near its beginning and are same as presented in the thesis text.
+Output logs from the trainings, results of which are presented in the thesis text can be found under `logs` as an archive file (in the snapshot of this repository uploaded to APD those are removed because of the size - please refer to the full repo branch at https://github.com/chorowski-lab/CPC_audio/tree/pp/thesis). In each log file name's prefix, position of the configuration corresponding to this run in the tables presented in the thesis is indicated (with 0- or 1-based numeration of rows and columns); however few of the run file names may contain misleading parts as I made some mistakes in naming - actual parameters are always output in the log file content near its beginning and are same as presented in the thesis text.
 
 --
 

@@ -1433,14 +1433,14 @@ def parseArgs(argv):
     group_mod.add_argument('--modCenter_mode', type=str, default=None,
         help="mode how to run centroid estimation; onlineKmeans for online k-means used in the thesis")
     group_mod.add_argument('--modCenter_initAfterEpoch', type=int, default=None,
-        help="after which epoch initialize the centroids; needs to be at least 2 epoch after the initial state (begin or checkpoint resumed)")
+        help="after which epoch to initialize the centroids; needs to be at least 2 epoch after the initial state (begin or checkpoint resumed)")
     group_mod.add_argument('--modCenter_firstInitNoIters', action='store_true',
         help="not used in thesis; in first centroid init don't use k-means, just random representations")
     group_mod.add_argument('--modCenter_kmeansInitIters', type=int, default=None,
-        help="number regular k-means iterations for initializing the centroids for online k-means")
+        help="number of regular k-means iterations for initializing the centroids for online k-means")
     group_mod.add_argument('--modCenter_kmeansInitBatches', type=int, default=None,
         help="number of batches on which regular k-means which initializes online k-means is run; this is a number of points drawn "
-             "(for each point its whole batch is taken), a few batches can repreat")
+             "(for each point its whole batch is taken), a few batches can repeat")
     group_mod.add_argument('--modCenter_kmeansReinitEachN', type=int, default=None,
         help="how frequently in terms of epochs perform online k-means reinitialization")
     group_mod.add_argument('--modCenter_kmeansReinitUpTo', type=int, default=None,
@@ -1489,7 +1489,7 @@ def parseArgs(argv):
     group_mod.add_argument('--ARlengthPredNoise',  type=float, default=None,
         help="standard deviation of normal noise added to predicted lengths in PDACPC - BEFORE MAPPING (e.g. with --modelLengthInARsimple and len 0.4-0.6, 0.1 will result in 0.01 after mapping)")
     group_mod.add_argument('--ARmodelFrameNormalsSigma',  type=float, default=None,
-        help="sigma parameter for PDACPC weights: normals, exp, doubleExp lin sigma (here 'trilin' mode with sigma)")
+        help="sigma parameter for PDACPC weights: normals, exp, doubleExp lin sigma (here it is 'trilin' mode with sigma)")
     group_mod.add_argument('--ARmodelFrameNormalsDistMult',  type=float, default=1.,
         help="not used in the thesis; could be used for lin sigma, but equivalent to picking a bigger sigma")
     group_mod.add_argument('--predShowDetachedLengths', action='store_true',
@@ -1497,7 +1497,7 @@ def parseArgs(argv):
     group_mod.add_argument('--predShowDetachedLengthsCumsum', action='store_true',
         help="not used in the thesis; show predicted frame lengths cumulative sum (with stopGradient applied) in predictors input")
     group_mod.add_argument('--linsepShowARlengthsInCtx', action='store_true',
-        help="show predicted frame lengths with stopGradient applied in context representations fed to linear separability model")
+        help="show predicted frame lengths (with stopGradient applied) in context representations fed to linear separability model")
     group_mod.add_argument('--shrinkEncodingsLengthDims', action='store_true',
         help="not used in the thesis; leave dimensions used for length predictions unused instead of relying on net learing soft projections to smaller dimensionality where needed")
     group_mod.add_argument('--ARmap01rangeMin',  type=float, default=0.,
