@@ -1,3 +1,18 @@
+# Code and train logs for master's thesis "Enhancing unsupervised representation predictive coding with grouping-based approaches"
+
+
+author: Piotr Pusz
+
+thesis advisor: dr hab. inż. Jan Chorowski
+
+
+Please refer to the main README at the root of this branch.
+
+
+below the readme of this folder from parent repository
+
+---------------------------
+
 # Repository's architecture
 
 train.py : main script

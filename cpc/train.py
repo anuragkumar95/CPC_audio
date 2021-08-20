@@ -1352,7 +1352,7 @@ def parseArgs(argv):
                             "should be saved")
 
     # stuff below for capturing data
-    group_save.add_argument('--pathCaptureSave', type=str, default=None, )
+    group_save.add_argument('--pathCaptureSave', type=str, default=None, help="path to where to capture data")
     group_save.add_argument('--captureEachEpochs', type=int, default=10, help='how often to save capture data')
     group_save.add_argument('--captureConvRepr', action='store_true', help='if to save representations after the encoder')
     group_save.add_argument('--captureCtxRepr', action='store_true', help='if to save LSTM-based contexts produced in CPC model')
@@ -1384,64 +1384,126 @@ def parseArgs(argv):
 
 
     group_mod = parser.add_argument_group("MOD")
-    group_mod.add_argument('--modSettings', action='store_true')
-    group_mod.add_argument('--modProtos', type=int, default=50)
-    group_mod.add_argument('--modPushLossWeightEnc', type=float, default=None)  
-    group_mod.add_argument('--modPushLossWeightCtx', type=float, default=None)  
-    group_mod.add_argument('--modVQpushEncCenterWeightOnTopConv', type=float, default=None)  
-    group_mod.add_argument('--modVQpushEncCenterWeightOnlyAR', type=float, default=None)  
-    group_mod.add_argument('--modVQpushEncCenterWeightOnlyCriterion', type=float, default=None)  
-    group_mod.add_argument('--modVQpushCtxCenterWeight', type=float, default=None)  
-    group_mod.add_argument('--modVQgradualStart', type=int, default=None)  
-    group_mod.add_argument('--modPushLossLinear', action='store_true')
-    group_mod.add_argument('--modPushLossGradualStart', type=int, default=None)  # increase loss weight from 0 * x at chosen start epoch to 1 * x through the training
-    group_mod.add_argument('--modPushLossProtosMult', type=float, default=None)  # like VQ-VAE commitment loss
-    group_mod.add_argument('--modPushLossCenterNorm', action='store_true')
-    group_mod.add_argument('--modPushLossPointNorm', action='store_true')
-    group_mod.add_argument('--modPushLossNormReweight', action='store_true')
-    group_mod.add_argument('--modPushLossReweightPointsSeparately', action='store_true')
-    group_mod.add_argument('--modHierARshorten', type=float, default=None)  # how big length reduction to make
-    group_mod.add_argument('--modHierARgradualStart', type=int, default=None)
-    group_mod.add_argument('--modHierARmergePrior', type=str, default="se")  # how big length reduction to make
 
-    group_mod.add_argument('--modCentermodule', action='store_true')
-    group_mod.add_argument('--modCenter_mode', type=str, default=None)
-    group_mod.add_argument('--modCenter_initAfterEpoch', type=int, default=None)
-    group_mod.add_argument('--modCenter_firstInitNoIters', action='store_true')
-    group_mod.add_argument('--modCenter_kmeansInitIters', type=int, default=None)
-    group_mod.add_argument('--modCenter_kmeansInitBatches', type=int, default=None)
-    group_mod.add_argument('--modCenter_kmeansReinitEachN', type=int, default=None)
-    group_mod.add_argument('--modCenter_kmeansReinitUpTo', type=int, default=None)
-    group_mod.add_argument('--modCenter_onlineKmeansBatches', type=int, default=None)
-    group_mod.add_argument('--modCenter_onlineKmeansBatchesLongTerm', type=int, default=None)
-    group_mod.add_argument('--modCenter_onlineKmeansBatchesLongTermWeight', type=float, default=None)
-    group_mod.add_argument('--modCenter_norm', action='store_true')
-    group_mod.add_argument('--modCenter_batchRecompute', type=int, default=None)
+    group_mod.add_argument('--modSettings', action='store_true',
+        help="enable the use of the modifications from the thesis")
+
+    # centroid-based denoising (online k-means params separately below)    
+    group_mod.add_argument('--modProtos', type=int, default=50,
+        help="number of centroids to use")
+    group_mod.add_argument('--modPushLossWeightEnc', type=float, default=None,
+        help="weight of centroid-based denoising loss term on representations z ('encodings')")  
+    group_mod.add_argument('--modPushLossWeightCtx', type=float, default=None,
+        help="not used in the thesis; weight of centroid-bsed denoising loss term on context representations c")  
+    group_mod.add_argument('--modVQpushEncCenterWeightOnTopConv', type=float, default=None,
+        help="not used in the thesis; additional VQ-like weighting with centroid after conv encoder")  
+    group_mod.add_argument('--modVQpushEncCenterWeightOnlyAR', type=float, default=None,
+        help="not used in the thesis; additional VQ-like weighting with centroid only for context net input")  
+    group_mod.add_argument('--modVQpushEncCenterWeightOnlyCriterion', type=float, default=None,
+        help="not used in the thesis; additional VQ-like weighting with centroid only for criterion")  
+    group_mod.add_argument('--modVQpushCtxCenterWeight', type=float, default=None,
+        help="not used in the thesis; ")  
+    group_mod.add_argument('--modVQgradualStart', type=int, default=None,
+        help="not used in the thesis; ")  
+    group_mod.add_argument('--modPushLossLinear', action='store_true',
+        help="use linear centroid-based denoising distance loss term instead of square one")
+    group_mod.add_argument('--modPushLossGradualStart', type=int, default=None,
+        help="not used in the thesis; increase loss weight from 0 * x at chosen start epoch to 1 * x through the training") 
+    group_mod.add_argument('--modPushLossProtosMult', type=float, default=None,
+        help="not used in the thesis; like VQ-VAE commitment loss with partial stopGradient and weighting pushing effect")
+    group_mod.add_argument('--modPushLossCenterNorm', action='store_true',
+        help="normalize centroids for centroid-based denoising; use with --modPushLossPointNorm, --modCenter_norm")
+    group_mod.add_argument('--modPushLossPointNorm', action='store_true',
+        help="normalize representations for centroid-based denoising; use with --modPushLossCenterNorm, --modCenter_norm")
+    group_mod.add_argument('--modPushLossNormReweight', action='store_true',
+        help="loss reweighting for normalization, default r-avg")
+    group_mod.add_argument('--modPushLossReweightPointsSeparately', action='store_true',
+        help="loss reweighting for normalization, r-sep")
+
+    group_mod.add_argument('--modHierARshorten', type=float, default=None,
+        help="not used in the thesis; for 'hierarchical segmentation' modification not presented in thesis text")  # how big length reduction to make
+    group_mod.add_argument('--modHierARgradualStart', type=int, default=None,
+        help="not used in the thesis; for 'hierarchical segmentation' modification not presented in thesis text")
+    group_mod.add_argument('--modHierARmergePrior', type=str, default="se",
+        help="not used in the thesis; for 'hierarchical segmentation' modification not presented in thesis text")  # how big length reduction to make
+
+    # online k-means params
+    group_mod.add_argument('--modCentermodule', action='store_true',
+        help="use module performing online k-means for centroid-based denoising")
+    group_mod.add_argument('--modCenter_mode', type=str, default=None,
+        help="mode how to run centroid estimation; onlineKmeans for online k-means used in the thesis")
+    group_mod.add_argument('--modCenter_initAfterEpoch', type=int, default=None,
+        help="after which epoch initialize the centroids; needs to be at least 2 epoch after the initial state (begin or checkpoint resumed)")
+    group_mod.add_argument('--modCenter_firstInitNoIters', action='store_true',
+        help="not used in thesis; in first centroid init don't use k-means, just random representations")
+    group_mod.add_argument('--modCenter_kmeansInitIters', type=int, default=None,
+        help="number regular k-means iterations for initializing the centroids for online k-means")
+    group_mod.add_argument('--modCenter_kmeansInitBatches', type=int, default=None,
+        help="number of batches on which regular k-means which initializes online k-means is run; this is a number of points drawn "
+             "(for each point its whole batch is taken), a few batches can repreat")
+    group_mod.add_argument('--modCenter_kmeansReinitEachN', type=int, default=None,
+        help="how frequently in terms of epochs perform online k-means reinitialization")
+    group_mod.add_argument('--modCenter_kmeansReinitUpTo', type=int, default=None,
+        help="upper bound on the epoch number when online k-means can be reinitialized, to avoid reinitializing near training end")
+    group_mod.add_argument('--modCenter_onlineKmeansBatches', type=int, default=None,
+        help="length of online k-means memory window in batches")
+    group_mod.add_argument('--modCenter_onlineKmeansBatchesLongTerm', type=int, default=None,
+        help="not used in the thesis; length of additional smaller-weight memory in online k-means")
+    group_mod.add_argument('--modCenter_onlineKmeansBatchesLongTermWeight', type=float, default=None,
+        help="not used in the thesis; weight of additional smaller-weight memory in online k-means")
+    group_mod.add_argument('--modCenter_norm', action='store_true',
+        help="normalize centroids for centroid-based denoising; use with --modPushLossCenterNorm, --modPushLossPointNorm")
+    group_mod.add_argument('--modCenter_batchRecompute', type=int, default=None,
+        help="not used in the thesis; used to recompute representations within memory window with more recent model state and reassign to clusters")
     
-    group_mod.add_argument('--modSegmentCostModule', action='store_true')
-    group_mod.add_argument('--modSegment_batchesMem', type=int, default=None)
+    group_mod.add_argument('--modSegmentCostModule', action='store_true',
+        help="not used in the thesis; for 'hierarchical segmentation' modification not presented in thesis text")
+    group_mod.add_argument('--modSegment_batchesMem', type=int, default=None,
+        help="not used in the thesis; for 'hierarchical segmentation' modification not presented in thesis text")
 
-    group_mod.add_argument('--nPredictorsTimeAligned',  type=int, default=None)
-    group_mod.add_argument('--modelLengthInARsimple', action='store_true')
-    group_mod.add_argument('--modelLengthInARconv', type=int, default=None)
-    group_mod.add_argument('--modelLengthInARpredStartDep', action='store_true')
-    group_mod.add_argument('--modelLengthInARpredEndDep', action='store_true')
-    group_mod.add_argument('--ARteachOnlyLastFrameLength', action='store_true')
-    group_mod.add_argument('--ARteachLongPredsUniformlyLess', action='store_true')
-    group_mod.add_argument('--ARteachLongPredsSqrtLess', action='store_true')
-    group_mod.add_argument('--ARlengthsGradReweight',  type=float, default=None)
-    group_mod.add_argument('--modelLengthInARweightsMode',  type=str, default="exp")
-    group_mod.add_argument('--modelLengthInARweightsCoeff',  type=float, default=2.)
-    group_mod.add_argument('--ARlengthFirstPredID', action='store_true')
-    group_mod.add_argument('--ARlengthPredNoise',  type=float, default=None)
-    group_mod.add_argument('--ARmodelFrameNormalsSigma',  type=float, default=None)
-    group_mod.add_argument('--ARmodelFrameNormalsDistMult',  type=float, default=1.)
-    group_mod.add_argument('--predShowDetachedLengths', action='store_true')
-    group_mod.add_argument('--predShowDetachedLengthsCumsum', action='store_true')
-    group_mod.add_argument('--linsepShowARlengthsInCtx', action='store_true')
-    group_mod.add_argument('--shrinkEncodingsLengthDims', action='store_true')
-    group_mod.add_argument('--ARmap01rangeMin',  type=float, default=0.)
-    group_mod.add_argument('--ARmap01rangeMax',  type=float, default=1.)
+    # PDACPC
+    group_mod.add_argument('--nPredictorsTimeAligned',  type=int, default=None,
+        help="number of predictors used in PDACPC")
+    group_mod.add_argument('--modelLengthInARsimple', action='store_true',
+        help="use regular frame length modeling in terms of phoneme duration for PDACPC model")
+    group_mod.add_argument('--modelLengthInARconv', type=int, default=None,
+        help="use frame length modeling in terms of phoneme duration with conv layer (allowing to see future representations, only for length prediction) for PDACPC model")
+    group_mod.add_argument('--modelLengthInARpredStartDep', action='store_true',
+        help="not used in the thesis; more complicated frame lengths prediction that worked worse")
+    group_mod.add_argument('--modelLengthInARpredEndDep', action='store_true',
+        help="not used in the thesis; more complicated frame lengths prediction that worked worse")
+    group_mod.add_argument('--ARteachOnlyLastFrameLength', action='store_true',
+        help="rebalancing loss teaching frame lengths - onlyTeachLast / OTL")
+    group_mod.add_argument('--ARteachLongPredsUniformlyLess', action='store_true',
+        help="rebalancing loss teaching frame lengths - teachUniformlyLess / TUL")
+    group_mod.add_argument('--ARteachLongPredsSqrtLess', action='store_true',
+        help="rebalancing loss teaching frame lengths - teachSqrtLess / TSL")
+    group_mod.add_argument('--ARlengthsGradReweight',  type=float, default=None,
+        help="gradient reqeighting coefficient for rebalancing loss teaching frame lengths")
+    group_mod.add_argument('--modelLengthInARweightsMode',  type=str, default="exp",
+        help="type of weights used in PDACPC model - exp, doubleExp, bilin, trilin or normals")
+    group_mod.add_argument('--modelLengthInARweightsCoeff',  type=float, default=2.,
+        help="alpha coefficient for exp, doubleExp weights in PDACPC")
+    group_mod.add_argument('--ARlengthFirstPredID', action='store_true',
+        help="'ID' variation of PDACPC - change first predictor for identity with current frame; can use with increasing --nPredictorsTimeAligned by 1")
+    group_mod.add_argument('--ARlengthPredNoise',  type=float, default=None,
+        help="standard deviation of normal noise added to predicted lengths in PDACPC - BEFORE MAPPING (e.g. with --modelLengthInARsimple and len 0.4-0.6, 0.1 will result in 0.01 after mapping)")
+    group_mod.add_argument('--ARmodelFrameNormalsSigma',  type=float, default=None,
+        help="sigma parameter for PDACPC weights: normals, exp, doubleExp lin sigma (here 'trilin' mode with sigma)")
+    group_mod.add_argument('--ARmodelFrameNormalsDistMult',  type=float, default=1.,
+        help="not used in the thesis; could be used for lin sigma, but equivalent to picking a bigger sigma")
+    group_mod.add_argument('--predShowDetachedLengths', action='store_true',
+        help="show predicted frame lengths (with stopGradient applied) in predictors input")
+    group_mod.add_argument('--predShowDetachedLengthsCumsum', action='store_true',
+        help="not used in the thesis; show predicted frame lengths cumulative sum (with stopGradient applied) in predictors input")
+    group_mod.add_argument('--linsepShowARlengthsInCtx', action='store_true',
+        help="show predicted frame lengths with stopGradient applied in context representations fed to linear separability model")
+    group_mod.add_argument('--shrinkEncodingsLengthDims', action='store_true',
+        help="not used in the thesis; leave dimensions used for length predictions unused instead of relying on net learing soft projections to smaller dimensionality where needed")
+    group_mod.add_argument('--ARmap01rangeMin',  type=float, default=0.,
+        help="lower range of interval to which predicted frame len is mapped in PDACPC")
+    group_mod.add_argument('--ARmap01rangeMax',  type=float, default=1.,
+        help="upper range of interval to which predicted frame len is mapped in PDACPC")
 
 
     group_gpu = parser.add_argument_group('GPUs')
