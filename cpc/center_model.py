@@ -9,6 +9,13 @@ import random
 
 from cpc.model import seDistancesToCentroids
 
+# [!] currently training with CenterModel (used for centroid-based denoising)
+#     is not really resumable, as I wasn't doing much long runs
+#     data about sums of points assigned to centroids is not saved in checkpoints, only centroids are;
+#     to make it full resumable, it would be needed to e.g. wipe out batchRecompute option 
+#     which didn't really help and makes it needed to save whole batches of data in state
+#     without that could add saving data about sums of points assigned to centroids in checkpoints
+
 class CentroidModule(nn.Module):
 
     def __init__(self, settings):  
