@@ -35,10 +35,47 @@ def levenshteinDistance(data):
         distances = distances_
     return distances[-1]
 
-def kreukBoundaryDetector(encodedData, prominence, justSegmenter=None):
-    scores = -F.cosine_similarity(encodedData[:, :-1, :], encodedData[:, 1:, :], dim=-1)
+def getAverageSlices(peaks, originalLength, device, minLengthSeq=None):
+    # now work out cut indices in each minibatch element
+    # batch_elem_idx = idx // encodedData.size(1)
+    # transition_idx = F.pad(torch.nonzero(batch_elem_idx[1:] != batch_elem_idx[:-1]), (0,0, 1,0))
+    cutpoints = torch.nonzero((peaks % originalLength) == 0)
+    compressedLens = (cutpoints[1:]-cutpoints[:-1]).squeeze(1)
+    # Handling case when there are sequences shorter than nPredict + 1
+    tooShortBatchIdx = torch.where(compressedLens < minLengthSeq)[0]
+    if len(tooShortBatchIdx) > 0:
+        for i in tooShortBatchIdx:
+            # How many sequence elements are we missing to be able to predict
+            cuts2Add = minLengthSeq - compressedLens[i]
+            # We add them by splitting the largest segments in the sequence in two equal parts
+            for j in range(cuts2Add):
+                segmentsBoundaries = peaks[cutpoints[i]:cutpoints[i + 1] + 1 + j]
+                largestSegmentIdx = torch.diff(segmentsBoundaries).max(0)[1]
+                peaks = torch.cat((peaks[:cutpoints[i] + largestSegmentIdx + 1], 
+                                torch.round((segmentsBoundaries[largestSegmentIdx] + segmentsBoundaries[largestSegmentIdx + 1]) / 2).int().unsqueeze(0), 
+                                peaks[cutpoints[i] + largestSegmentIdx + 1:]))
+            cutpoints[i + 1:] += cuts2Add
+        cutpoints = torch.nonzero((peaks % originalLength) == 0)
+        compressedLens = (cutpoints[1:]-cutpoints[:-1]).squeeze(1)
+
+    seqIdx = torch.nn.utils.rnn.pad_sequence(
+        torch.split(peaks[1:] % originalLength, tuple(cutpoints[1:]-cutpoints[:-1])), batch_first=True)
+    seqIdx[seqIdx==0] = originalLength
+    seqIdx = F.pad(seqIdx, (1,0,0,0))
+
+    frame_idxs = torch.arange(originalLength, device=device).view(1, 1, -1)
+    compressMatrices = (
+        (seqIdx[:,:-1, None] <= frame_idxs)
+        & (seqIdx[:,1:, None] > frame_idxs)
+    ).float()
+
+    compressedLens = compressedLens.cpu()
+    return compressMatrices, compressedLens
+
+def kreukBoundaryDetector(encodedData, prominence, minLengthSeq=None):
+    scores = F.cosine_similarity(encodedData[:, :-1, :], encodedData[:, 1:, :], dim=-1)
     scores = torch.cat([scores[:, 0].view(-1, 1), scores], dim=1)
-    scores = maxMinNorm(scores)
+    scores = 1 - maxMinNorm(scores)
     peaks, _ = find_peaks(scores.view(-1).cpu().numpy(), prominence=prominence)
     if len(peaks) == 0:
         peaks = torch.tensor([0])
@@ -48,81 +85,34 @@ def kreukBoundaryDetector(encodedData, prominence, justSegmenter=None):
     peaks = torch.unique(torch.cat((peaks, seqEndIdx)), sorted=True)
     return peaks
 
-def jchBoundaryDetector(encodedData, final_length_factor, minLengthSeq=None, step_reduction=0.2, justSegmenter=False, label=None):
+def jchBoundaryDetector(encodedData, final_length_factor, minLengthSeq=None, step_reduction=0.2):
     assert not torch.isnan(encodedData).any()
     device = encodedData.device
-    if label is not None:
-        diffs = torch.diff(label, dim=1)
-        phone_changes = torch.cat((torch.ones((label.shape[0], 1)).cuda(), diffs), dim=1)
-        idx = torch.nonzero(phone_changes.contiguous().view(-1), as_tuple=True)[0]
-    else:
-        encFlat = F.pad(encodedData.reshape(-1, encodedData.size(-1)).detach(), (0, 0, 1, 0))
-        feat_csum = encFlat.cumsum(0)
-        feat_csum2 = (encFlat**2).cumsum(0)
-        idx = torch.arange(feat_csum.size(0), device=feat_csum.device)
+    encFlat = F.pad(encodedData.reshape(-1, encodedData.size(-1)).detach(), (0, 0, 1, 0))
+    feat_csum = encFlat.cumsum(0)
+    feat_csum2 = (encFlat**2).cumsum(0)
+    peaks = torch.arange(feat_csum.size(0), device=feat_csum.device)
+    final_length = int(final_length_factor * len(encFlat))
+    while len(peaks) > final_length:
+        begs = peaks[:-2]
+        ends = peaks[2:]
+        sum1 = (feat_csum.index_select(0, ends) - feat_csum.index_select(0, begs))
+        sum2 = (feat_csum2.index_select(0, ends) - feat_csum2.index_select(0, begs))
+        num_elem = (ends-begs).float().unsqueeze(1)
 
-        final_length = int(final_length_factor * len(encFlat))
+        diffs = F.pad(torch.sqrt(((sum2/ num_elem - (sum1/ num_elem)**2) ).mean(1)) * num_elem.squeeze(1),
+                    (1,1), value=1e10)
 
-        while len(idx) > final_length:
-            begs = idx[:-2]
-            ends = idx[2:]
-
-            sum1 = (feat_csum.index_select(0, ends) - feat_csum.index_select(0, begs))
-            sum2 = (feat_csum2.index_select(0, ends) - feat_csum2.index_select(0, begs))
-            num_elem = (ends-begs).float().unsqueeze(1)
-
-            diffs = F.pad(torch.sqrt(((sum2/ num_elem - (sum1/ num_elem)**2) ).mean(1)) * num_elem.squeeze(1),
-                      (1,1), value=1e10)
-
-            num_to_retain = max(final_length, int(idx.shape[-1] * step_reduction))
-            _, keep_idx = torch.topk(diffs, num_to_retain)
-            keep_idx = torch.sort(keep_idx)[0]
-            idx = idx.index_select(0, keep_idx)
-    
+        num_to_retain = max(final_length, int(peaks.shape[-1] * step_reduction))
+        _, keep_idx = torch.topk(diffs, num_to_retain)
+        keep_idx = torch.sort(keep_idx)[0]
+        peaks = peaks.index_select(0, keep_idx)
     # Ensure that minibatch boundaries are preserved
     seq_end_idx = torch.arange(0, encodedData.size(0)*encodedData.size(1) + 1, encodedData.size(1), device=device)
-    idx = torch.unique(torch.cat((idx, seq_end_idx)), sorted=True)
+    peaks = torch.unique(torch.cat((peaks, seq_end_idx)), sorted=True)
+    return peaks
 
-    if justSegmenter:
-        return idx
-    # now work out cut indices in each minibatch element
-    # batch_elem_idx = idx // encodedData.size(1)
-    # transition_idx = F.pad(torch.nonzero(batch_elem_idx[1:] != batch_elem_idx[:-1]), (0,0, 1,0))
-    cutpoints = torch.nonzero((idx % encodedData.size(1)) == 0)
-    compressed_lens = (cutpoints[1:]-cutpoints[:-1]).squeeze(1)
-    # Handling case when there are sequences shorter than nPredict + 1
-    tooShortBatchIdx = torch.where(compressed_lens < minLengthSeq)[0]
-    if len(tooShortBatchIdx) > 0:
-        for i in tooShortBatchIdx:
-            # How many sequence elements are we missing to be able to predict
-            cuts2Add = minLengthSeq - compressed_lens[i]
-            # We add them by splitting the largest segments in the sequence in two equal parts
-            for j in range(cuts2Add):
-                segmentsBoundaries = idx[cutpoints[i]:cutpoints[i + 1] + 1 + j]
-                largestSegmentIdx = torch.diff(segmentsBoundaries).max(0)[1]
-                idx = torch.cat((idx[:cutpoints[i] + largestSegmentIdx + 1], 
-                                torch.round((segmentsBoundaries[largestSegmentIdx] + segmentsBoundaries[largestSegmentIdx + 1]) / 2).int().unsqueeze(0), 
-                                idx[cutpoints[i] + largestSegmentIdx + 1:]))
-            cutpoints[i + 1:] += cuts2Add
-        cutpoints = torch.nonzero((idx % encodedData.size(1)) == 0)
-        compressed_lens = (cutpoints[1:]-cutpoints[:-1]).squeeze(1)
-
-    seq_idx = torch.nn.utils.rnn.pad_sequence(
-        torch.split(idx[1:] % encodedData.size(1), tuple(cutpoints[1:]-cutpoints[:-1])), batch_first=True)
-    seq_idx[seq_idx==0] = encodedData.size(1)
-    seq_idx = F.pad(seq_idx, (1,0,0,0))
-
-    frame_idxs = torch.arange(encodedData.size(1), device=device).view(1, 1, -1)
-    compress_matrices = (
-        (seq_idx[:,:-1, None] <= frame_idxs)
-        & (seq_idx[:,1:, None] > frame_idxs)
-    ).float()
-
-    compressed_lens = compressed_lens.cpu()
-    assert compress_matrices.shape[0] == encodedData.shape[0]
-    return compress_matrices, compressed_lens
-
-def jhuBoundaryDetector(encodedData, threshold=0.04, justSegmenter=False):
+def jhuBoundaryDetector(encodedData, threshold=0.04):
     # BS x Len x DimEnc
     device = encodedData.device
     batchSize, Len, _ = encodedData.shape
@@ -138,12 +128,6 @@ def jhuBoundaryDetector(encodedData, threshold=0.04, justSegmenter=False):
                             torch.maximum(F.pad(d[:,:-2] - d[:,2:], (0,2)), zeros_2_comp))
     p = torch.minimum(torch.maximum(torch.maximum(pt_1, pt_2) - threshold, zeros_2_comp), pt_1)
     p = F.pad(p, (1,0), value=1)
-
-    if justSegmenter:
-        idx = torch.nonzero(p.contiguous().view(-1), as_tuple=True)[0]
-        seqEndIdx = torch.arange(0, encodedData.size(0)*encodedData.size(1) + 1, encodedData.size(1), device=device)
-        idx = torch.unique(torch.cat((idx, seqEndIdx)), sorted=True)
-        return idx
 
     b_soft = torch.tanh(10 * p)
     b_hard = torch.tanh(10000 * p)

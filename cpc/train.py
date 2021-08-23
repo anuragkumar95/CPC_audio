@@ -56,7 +56,7 @@ def getCriterion(args, downsampling, nSpeakers, nPhones):
                                                         speakerEmbedding=args.speakerEmbedding,
                                                         sizeInputSeq=sizeInputSeq,
                                                         numLevels=args.CPCCTCNumLevels,
-                                                        reductionFactor=args.CPCCTCReductionFactor,
+                                                        segmentationThreshold=args.segmentationThreshold,
                                                         smartPooling=args.smartPooling,
                                                         stepReduction=args.stepReduction)
 
@@ -456,7 +456,7 @@ def main(args):
     if not args.onlyCapture or args.only_classif_metric:
         print(f'Found files: {len(seqNames)} seqs, {len(speakers)} speakers')
         # Datasets
-        if args.pathTrain is not None:
+        if args.pathTrain is not None and len(args.pathTrain) == len(args.pathDB):
             seqTrain = filterSeqs(args.pathTrain, seqNames)
         else:
             seqTrain = seqNames
@@ -860,7 +860,7 @@ def parseArgs(argv):
     group_db.add_argument('--pathDB', type=str, nargs="+", default=None,
                           help='Path(s) to the directory containing the '
                           'data.')
-    group_db.add_argument('--file_extension', type=str, nargs="+", default=".flac",
+    group_db.add_argument('--file_extension', type=str, nargs="+", default=[".flac"],
                           help="Extension(s) of the audio files in the dataset(s).")
     group_db.add_argument('--pathTrain', type=str, nargs="+", default=None,
                           help='Path(s) to a .txt file containing the list of the '

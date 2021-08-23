@@ -47,9 +47,9 @@ def evalPhoneSegmentation(featureMaker, boundaryDetector, dataLoader, labelKey="
 
         for segmentationParam in segmentationParamRange:
             if onEncodings:
-                predictedBoundaries = boundaryDetector(encodedData, segmentationParam, justSegmenter=True).cpu()
+                predictedBoundaries = boundaryDetector(encodedData, segmentationParam).cpu()
             else:
-                predictedBoundaries = boundaryDetector(cFeature, segmentationParam, justSegmenter=True).cpu()
+                predictedBoundaries = boundaryDetector(cFeature, segmentationParam).cpu()
             
             precisionCounter = 0
             recallCounter = 0
@@ -77,10 +77,12 @@ def evalPhoneSegmentation(featureMaker, boundaryDetector, dataLoader, labelKey="
             rVal = 1 - (np.abs(r1) + np.abs(r2)) / 2
             
             if rVal > maxRval:
+                bestSegmentationParam = segmentationParam
                 maxRval = rVal
                 bestPrecision = precision
                 bestRecall = recall
                 bestF1 = f1
+        # print(f"Best segmentation param: {bestSegmentationParam}")
         logs["precision"] += bestPrecision.view(1).numpy()
         logs["recall"] += bestRecall.view(1).numpy()
         logs["f1"] += bestF1.view(1).numpy()
@@ -120,13 +122,13 @@ def run(featureMaker,
 def parse_args(argv):
     parser = argparse.ArgumentParser(description='Linear separability trainer'
                                      ' (default test in speaker separability)')
-    parser.add_argument('pathDB', type=str,
+    parser.add_argument('--pathDB', type=str, nargs="+",
                         help="Path to the directory containing the audio data.")
-    parser.add_argument('pathTrain', type=str,
+    parser.add_argument('--pathTrain', type=str, nargs="+",
                         help="Path to the list of the training sequences.")
-    parser.add_argument('pathVal', type=str,
+    parser.add_argument('--pathVal', type=str, nargs="+",
                         help="Path to the list of the test sequences.")
-    parser.add_argument('load', type=str, nargs='*',
+    parser.add_argument('--load', type=str, nargs='*',
                         help="Path to the checkpoint to evaluate.")
     parser.add_argument('--pathPhone', type=str, default=None,
                         help="Path to the phone labels. If given, will"
@@ -142,7 +144,7 @@ def parse_args(argv):
     parser.add_argument('--debug', action='store_true',
                         help='If activated, will load only a small number '
                         'of audio data.')
-    parser.add_argument('--file_extension', type=str, default=".flac",
+    parser.add_argument('--file_extension', type=str, nargs="+", default=".flac",
                         help="Extension of the audio files in pathDB.")
     parser.add_argument('--get_encoded', action='store_true',
                         help="If activated, will work with the output of the "
@@ -161,7 +163,7 @@ def parse_args(argv):
     parser.add_argument("--model", type=str, default="cpc",
                           help="Pre-trained model architecture ('cpc' [default] or 'wav2vec2').")
     parser.add_argument("--boundaryDetector", type=str, default="jch",
-                          help="Which boundary detector to use: jch, kreuk, or jhu")
+                          help="Which boundary detector to use: jch or kreuk")
     parser.add_argument('--gru_level', type=int, default=-1,
                         help='Hidden level of the LSTM autoregressive model to be taken'
                         '(default: -1, last layer).')
@@ -219,8 +221,9 @@ def main(argv):
     model = torch.nn.DataParallel(model, device_ids=range(args.nGPU))
 
     # Dataset
-    seq_train = filterSeqs(args.pathTrain, seqNames)
-    seq_val = filterSeqs(args.pathVal, seqNames)
+    # seq_train = filterSeqs(args.pathTrain, seqNames)
+    # seq_val = filterSeqs(args.pathVal, seqNames)
+    seq_val = seqNames
 
     if args.debug:
         seq_train = seq_train[:1000]
@@ -269,10 +272,10 @@ def main(argv):
 
 
 if __name__ == "__main__":
-    #import ptvsd
-    #ptvsd.enable_attach(('0.0.0.0', 7310))
-    #print("Attach debugger now")
-    #ptvsd.wait_for_attach()
+    # import ptvsd
+    # ptvsd.enable_attach(('0.0.0.0', 7310))
+    # print("Attach debugger now")
+    # ptvsd.wait_for_attach()
 
     torch.multiprocessing.set_start_method('spawn')
     args = sys.argv[1:]

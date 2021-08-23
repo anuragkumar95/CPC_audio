@@ -5,5 +5,8 @@ __pycache__
 cpc/eval/ABX/*so
 cpc/eval/ABX/*.c
 build/
-cpc/dummy.py
+dummy.py
 .vscode
+exps*
+*.csv
+*.png

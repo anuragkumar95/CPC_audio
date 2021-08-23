@@ -7,7 +7,7 @@ import torch.nn.functional as F
 import torchaudio
 
 import torch
-from .utils.misc import jchBoundaryDetector, jhuBoundaryDetector, compress_batch, decompress_padded_batch
+from cpc.utils.misc import jchBoundaryDetector, jhuBoundaryDetector, kreukBoundaryDetector, compress_batch, decompress_padded_batch, getAverageSlices
 
 ###########################################
 # Networks
@@ -165,10 +165,11 @@ class CPCAR(nn.Module):
                  dimOutput,
                  keepHidden,
                  nLevelsGRU,
-                 reductionFactor,
+                 segmentationThreshold,
                  smartPooling,
                  stepReduction,
                  numLevels,
+                 encodeSegments,
                  minLengthSeqMinusOne,
                  mode="GRU",
                  reverse=False,
@@ -189,10 +190,18 @@ class CPCAR(nn.Module):
         for _ in range(numLevels):
                 self.heads.append(baseNet(dimEncoded, dimOutput, num_layers=nLevelsGRU, batch_first=True))
 
+        self.encodeSegments = encodeSegments
+        if encodeSegments:
+            self.segmentEncoder = nn.Sequential(
+                nn.Linear(dimEncoded, dimEncoded),
+                nn.ReLU(),
+                nn.Linear(dimEncoded, dimEncoded)
+            ) 
+
         self.hidden = [None] * numLevels
         self.keepHidden = keepHidden
         self.reverse = reverse
-        self.reductionFactor = reductionFactor
+        self.segmentationThreshold = segmentationThreshold
         self.numLevels = numLevels
         self.smartPooling = smartPooling
         self.stepReduction = stepReduction
@@ -205,14 +214,14 @@ class CPCAR(nn.Module):
     def forward(self, x, label=None):
         # transformedX = []
 
-        if not self.smartPooling:
-            if x.size(1) % self.reductionFactor != 0:
-                numExtraElements = x.size(1) % self.reductionFactor
+        if not self.smartPooling and self.numLevels > 1:
+            if x.size(1) % 1 / self.segmentationThreshold != 0:
+                numExtraElements = x.size(1) % self.segmentationThreshold
                 padValue = torch.repeat_interleave(torch.mean(x[:, -numExtraElements:, :], dim=1).view(-1, 1, x.size(2)), 
-                                                    repeats=self.reductionFactor - numExtraElements, dim=1)
+                                                    repeats=1 / self.segmentationThreshold - numExtraElements, dim=1)
                 x = torch.cat((x, padValue), dim=1)
 
-            assert x.size(1) % self.reductionFactor == 0
+            assert x.size(1) % self.segmentationThreshold == 0
 
         if self.reverse:
             raise NotImplementedError
@@ -233,26 +242,40 @@ class CPCAR(nn.Module):
 
         for l in range(1, self.numLevels):
             if self.smartPooling:
-                minLengthSeq = max(1, int(round(2* self.minLengthSeqMinusOne / self.reductionFactor**l))) + 1
+                minLengthSeq = max(1, int(round(2* self.minLengthSeqMinusOne * self.segmentationThreshold**l))) + 1
                 if self.segmentationType == 'jch':
-                    compressedMatrices, compressedLens = jchBoundaryDetector(x, 1 / self.reductionFactor**l, minLengthSeq, self.stepReduction, label=label)
-                    packedCompressedX = compress_batch(
-                        x, compressedMatrices, compressedLens, pack=True
-                    )
+                    boundaries = jchBoundaryDetector(x, self.segmentationThreshold**l, minLengthSeq, self.stepReduction)                                    
+                elif self.segmentationType == 'kreuk':
+                    boundaries = kreukBoundaryDetector(x, self.segmentationThreshold, minLengthSeq)
                 elif self.segmentationType == 'jhu':
-                    xPadded, compressedMatrices, compressedLens = jhuBoundaryDetector(x)
+                    xPadded, compressedMatrices, compressedLens =  jhuBoundaryDetector(x, self.segmentationThreshold, minLengthSeq)
                     packedCompressedX = torch.nn.utils.rnn.pack_padded_sequence(xPadded, compressedLens, batch_first=True, enforce_sorted=False)
+                elif label is not None:
+                    diffs = torch.diff(label, dim=1)
+                    phoneChanges = torch.cat((torch.ones((label.shape[0], 1)).cuda(), diffs), dim=1)
+                    boundaries = torch.nonzero(phoneChanges.contiguous().view(-1), as_tuple=True)[0]
+                else:
+                    raise NotImplementedError
+                if self.segmentationType in ['jch', 'kreuk'] or label is not None:
+                    compressMatrices, compressedLens = getAverageSlices(boundaries, x.size(1), x.device, minLengthSeq)
+                    packedCompressedX = compress_batch(
+                        x, compressMatrices, compressedLens, pack=True
+                    )
+                assert compressMatrices.shape[0] == x.shape[0]
                 packedX, packedH = self.heads[l](packedCompressedX, self.hidden[l])
-                o = decompress_padded_batch(packedX, compressedMatrices)
+                o = decompress_padded_batch(packedX, compressMatrices)
+                segments = decompress_padded_batch(packedCompressedX, compressMatrices)
+                if self.encodeSegments:
+                    segments = self.segmentEncoder(segments)
                 outs.append({
-                    'encodedData': decompress_padded_batch(packedCompressedX, compressedMatrices),
+                    'encodedData': segments,
                     'states': o,
                     'seqLens': compressedLens.cuda()
                 })
                 hs.append(packedH)
             else:
                 # Random uniform pooling
-                x = x.view(x.size(0), x.size(1) // self.reductionFactor, self.reductionFactor, x.size(2))
+                x = x.view(x.size(0), x.size(1) * self.segmentationThreshold, 1 / self.segmentationThreshold, x.size(2))
                 pickedIdxs = torch.randint(x.size(2), size=(x.size(1),))
                 x = x[:, torch.arange(x.size(1)), pickedIdxs, :]
                 

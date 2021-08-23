@@ -158,7 +158,7 @@ class CPCUnsupersivedCriterion(BaseCriterion):
                  dimOutputEncoder,      # Dimension of the convolutional net
                  negativeSamplingExt,   # Number of negative samples to draw
                  simMeasure,
-                 reductionFactor,       # Subsampling factor at each CPC head
+                 segmentationThreshold,       # Subsampling factor at each CPC head
                  numLevels,             # Number of CPC heads
                  smartPooling,
                  stepReduction,
@@ -200,9 +200,9 @@ class CPCUnsupersivedCriterion(BaseCriterion):
         self.wPredictions.append(PredictionNetwork(nPredicts, dimOutputAR, dimOutputEncoder, rnnMode=rnnMode, dropout=dropout, 
                                                    sizeInputSeq=self.maxSizeInputSeq - nMatched))
         for l in range(1, numLevels):
-            nMatched = max(1, int(round(2* nMatched / reductionFactor)))
+            nMatched = max(1, int(round(2* nMatched * segmentationThreshold)))
             self.wPredictions.append(PredictionNetwork(nMatched, dimOutputAR, dimOutputEncoder, rnnMode=rnnMode, dropout=dropout, 
-                                                        sizeInputSeq=self.maxSizeInputSeq - nMatched if smartPooling else sizeInputSeq // (reductionFactor ** l) - nMatched))
+                                                        sizeInputSeq=self.maxSizeInputSeq - nMatched if smartPooling else int(sizeInputSeq * segmentationThreshold ** l) - nMatched))
             self.nMatched.append(nMatched)
         self.learn_blank = learn_blank
         if learn_blank:
@@ -235,7 +235,7 @@ class CPCUnsupersivedCriterion(BaseCriterion):
             raise ValueError("Invalid mode")
 
         self.mode = mode
-        self.reductionFactor = reductionFactor
+        self.segmentationThreshold = segmentationThreshold
         self.numLevels = numLevels
         self.smartPooling = smartPooling
         self.stepReduction = stepReduction
@@ -452,7 +452,7 @@ class CPCUnsupersivedCriterion(BaseCriterion):
                     cFeature = cFeature['states']
                 else:
                     # Random uniform pooling
-                    encodedData = encodedData.view(encodedData.size(0), encodedData.size(1) // self.reductionFactor, self.reductionFactor, encodedData.size(2))
+                    encodedData = encodedData.view(encodedData.size(0), int(encodedData.size(1) * self.segmentationThreshold), self.segmentationThreshold, encodedData.size(2))
                     pickedIdxs = torch.randint(encodedData.size(2), size=(encodedData.size(1),))
                     encodedData = encodedData[:, torch.arange(encodedData.size(1)), pickedIdxs, :]
                     seqSize = torch.IntTensor([cFeature.size(1)] * cFeature.size(0))

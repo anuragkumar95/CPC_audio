@@ -2,14 +2,20 @@ import os
 import glob
 import argparse
 import sys
-from shutil import copyfile
 import tqdm
 import numpy as np
 import torchaudio
 import io
+import math
+
+def spectralSize(wavLen):
+    layers = [(10, 5, 3), (8, 4, 2), (4, 2, 1), (4, 2, 1), (4 ,2, 1)]
+    for kernel, stride, padding in layers:
+        wavLen = math.floor((wavLen + 2 * padding - 1 * (kernel - 1) - 1) / stride + 1)
+    return wavLen
 
 
-def processDataset(audioFiles, outPath, split, phonesDict, dataset='timit'):
+def processDataset(audioFiles, outPath, splitLabel, phonesDict, dataset='timit'):
     """
     List audio files and transcripts for a certain partition of TIMIT dataset.
     Args:
@@ -21,11 +27,6 @@ def processDataset(audioFiles, outPath, split, phonesDict, dataset='timit'):
     # audioFiles = [p for p in audioFiles if 'SA' not in os.path.basename(p)]
     fileWriter = open(os.path.join(outPath, 'converted_aligned_phones.txt'), "a")
     for wavFile in tqdm.tqdm(audioFiles):
-        waveData, samplingRate = torchaudio.load(wavFile)
-        speakerName = os.path.basename(os.path.dirname(wavFile))
-        trackName = os.path.basename(wavFile)
-        speakerDir = os.path.join(outPath, split, speakerName)
-        os.makedirs(speakerDir, exist_ok=True)
         if dataset == 'timit':
             labelsFile = wavFile[:-4] + '.PHN'
             with open(labelsFile) as fileReader:
@@ -37,9 +38,18 @@ def processDataset(audioFiles, outPath, split, phonesDict, dataset='timit'):
                 phones = io.open(labelsFile, encoding='latin-1')
             rawLabels = list(process_phones(phones))
             phones.close()
-        fileWriter.write(speakerName + '-' + trackName[:-4])
-        intervals2Keep = np.arange(waveData.size(1))
-        for l in rawLabels:
+        waveData, samplingRate = torchaudio.load(wavFile)
+
+        speakerName = os.path.basename(os.path.dirname(wavFile))
+        trackName = os.path.basename(wavFile)
+        speakerDir = os.path.join(outPath, splitLabel, speakerName)
+        os.makedirs(speakerDir, exist_ok=True)
+        
+        fileWriter.write(speakerName + '-' + trackName[:-4] + ' ')
+        intervals2Keep = np.arange(waveData.size(1) + 1)
+        phones = []
+        phoneDurations = []
+        for i, l in enumerate(rawLabels):
             if dataset == 'timit':
                 t0, t1, phoneCode = l.strip().split()  
             elif dataset == 'buckeye':
@@ -55,14 +65,33 @@ def processDataset(audioFiles, outPath, split, phonesDict, dataset='timit'):
                 phoneCode = str(phonesDict[phoneCode])
                 nonSpeech2Keep = min(320, t1 - t0)
                 intervals2Keep = intervals2Keep[~np.isin(intervals2Keep, np.arange(t0 + nonSpeech2Keep, t1 + 1))]
-                subSampledNonSpeech2Keep = int(nonSpeech2Keep * 100 / samplingRate)
-                fileWriter.write((' ' + phoneCode) * subSampledNonSpeech2Keep)
+                # phones += [phoneCode] * nonSpeech2Keep
+                phones.append(phoneCode)
+                phoneDurations.append(nonSpeech2Keep / samplingRate)
             else:
                 phoneCode = str(phonesDict[phoneCode])
-                subSampledPhoneDuration = int(phoneDuration * 100 / samplingRate)
-                fileWriter.write((' ' + phoneCode) * subSampledPhoneDuration)
+                # phones += [phoneCode] * phoneDuration
+                phones.append(phoneCode)
+                phoneDurations.append(phoneDuration / samplingRate)
+        initOffset = int(rawLabels[0].split()[0]) if dataset == 'timit' else int(rawLabels[0].beg * samplingRate)
+        endIdx = int(rawLabels[-1].split()[-2]) if dataset == 'timit' else int(rawLabels[-1].end * samplingRate)
+        intervals2Keep = intervals2Keep[intervals2Keep >= initOffset]
+        intervals2Keep = intervals2Keep[intervals2Keep < min(waveData.size(1), endIdx)]
         waveData = waveData[:, intervals2Keep].view(1, -1)
-        torchaudio.save(os.path.join(speakerDir, trackName), waveData, samplingRate, channels_first=True)
+        audioLen = waveData.size(1)
+        spectralLen = spectralSize(audioLen)
+        
+        phoneBoundaries = np.cumsum(phoneDurations)
+        tDownsampled = np.linspace(0, phoneBoundaries[-1], num=spectralLen) # + (audioLen / (samplingRate * spectralLen)) / 2
+        downsampledLabel = []
+        i = 0
+        for t in tDownsampled:
+            if t >= phoneBoundaries[i] and i < (len(phones) - 1):
+                i += 1
+            downsampledLabel.append(phones[i])
+        assert len(downsampledLabel) == spectralLen
+        fileWriter.write(' '.join(downsampledLabel))
+        torchaudio.save(os.path.join(speakerDir, speakerName + '-' + trackName), waveData, samplingRate, channels_first=True)
         fileWriter.write('\n')
     fileWriter.close()
 
@@ -208,4 +237,8 @@ def main(argv):
     print ("Data preparation is complete !")
 
 if __name__ == '__main__':
+    # import ptvsd
+    # ptvsd.enable_attach(('0.0.0.0', 7310))
+    # print("Attach debugger now")
+    # ptvsd.wait_for_attach()
     main(sys.argv[1:])
