@@ -243,17 +243,20 @@ class CPCAR(nn.Module):
         for l in range(1, self.numLevels):
             if self.smartPooling:
                 minLengthSeq = max(1, int(round(2* self.minLengthSeqMinusOne * self.segmentationThreshold**l))) + 1
-                if self.segmentationType == 'jch':
+                if label is not None:
+                    diffs = torch.diff(label, dim=1)
+                    phoneChanges = torch.cat((torch.ones((label.shape[0], 1)).cuda(), diffs), dim=1)
+                    boundaries = torch.nonzero(phoneChanges.contiguous().view(-1), as_tuple=True)[0]
+                    # Ensure that minibatch boundaries are preserved
+                    seqEndIdx = torch.arange(0, x.size(0)*x.size(1) + 1, x.size(1), device=x.device)
+                    boundaries = torch.unique(torch.cat((boundaries, seqEndIdx)), sorted=True)
+                elif self.segmentationType == 'jch':
                     boundaries = jchBoundaryDetector(x, self.segmentationThreshold**l, minLengthSeq, self.stepReduction)                                    
                 elif self.segmentationType == 'kreuk':
                     boundaries = kreukBoundaryDetector(x, self.segmentationThreshold, minLengthSeq)
                 elif self.segmentationType == 'jhu':
                     xPadded, compressedMatrices, compressedLens =  jhuBoundaryDetector(x, self.segmentationThreshold, minLengthSeq)
                     packedCompressedX = torch.nn.utils.rnn.pack_padded_sequence(xPadded, compressedLens, batch_first=True, enforce_sorted=False)
-                elif label is not None:
-                    diffs = torch.diff(label, dim=1)
-                    phoneChanges = torch.cat((torch.ones((label.shape[0], 1)).cuda(), diffs), dim=1)
-                    boundaries = torch.nonzero(phoneChanges.contiguous().view(-1), as_tuple=True)[0]
                 else:
                     raise NotImplementedError
                 if self.segmentationType in ['jch', 'kreuk'] or label is not None:
