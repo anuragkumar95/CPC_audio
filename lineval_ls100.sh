@@ -51,10 +51,10 @@ rsync --exclude '.*' \
 
 echo $0 "$@" >> ${SAVE_DIR}/out.txt
 exec python -u cpc/eval/linear_separability.py \
-    /pio/gluster/data/ls-train-clean-100/LibriSpeech/train-clean-100 \
-    /pio/gluster/data/ls-train-clean-100/train_split.txt \
-    /pio/gluster/data/ls-train-clean-100/test_split.txt \
-    "$@" \
+    --pathDB /pio/gluster/data/ls-train-clean-100/LibriSpeech/train-clean-100 \
+    --pathTrain /pio/gluster/data/ls-train-clean-100/train_split.txt \
+    --pathVal /pio/gluster/data/ls-train-clean-100/test_split.txt \
+    --load "$@" \
     --pathPhone /pio/gluster/data/ls-train-clean-100/converted_aligned_phones.txt \
     --file_extension .flac \
     --pathCheckpoint $SAVE_DIR \

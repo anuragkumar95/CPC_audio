@@ -36,6 +36,11 @@ def levenshteinDistance(data):
     return distances[-1]
 
 def getAverageSlices(peaks, originalLength, device, minLengthSeq=None):
+    if isinstance(peaks, list):
+        # Ensure that minibatch boundaries are preserved
+        seqEndIdx = torch.arange(0, len(peaks)*originalLength + 1, originalLength, device=device)
+        peaks = torch.cat(peaks).to(device)
+        peaks = torch.unique(torch.cat((peaks, seqEndIdx)), sorted=True)
     # now work out cut indices in each minibatch element
     # batch_elem_idx = idx // encodedData.size(1)
     # transition_idx = F.pad(torch.nonzero(batch_elem_idx[1:] != batch_elem_idx[:-1]), (0,0, 1,0))
@@ -70,22 +75,22 @@ def getAverageSlices(peaks, originalLength, device, minLengthSeq=None):
     ).float()
 
     compressedLens = compressedLens.cpu()
-    return compressMatrices, compressedLens
+    return compressMatrices, compressedLens, F.pad(seqIdx, (0, originalLength - seqIdx.size(1),0,0))
 
-def kreukBoundaryDetector(encodedData, prominence, minLengthSeq=None):
-    scores = F.cosine_similarity(encodedData[:, :-1, :], encodedData[:, 1:, :], dim=-1)
-    scores = torch.cat([scores[:, 0].view(-1, 1), scores], dim=1)
-    scores = 1 - maxMinNorm(scores)
-    peaks, _ = find_peaks(scores.view(-1).cpu().numpy(), prominence=prominence)
-    if len(peaks) == 0:
-        peaks = torch.tensor([0])
-    peaks = torch.tensor(peaks)
-    # Ensure that minibatch boundaries are preserved
-    seqEndIdx = torch.arange(0, encodedData.size(0)*encodedData.size(1) + 1, encodedData.size(1))
-    peaks = torch.unique(torch.cat((peaks, seqEndIdx)), sorted=True)
+def kreukBoundaryDetector(features, prominence, seqLens, minLengthSeq=None):
+    feature1, feature2 = features
+    if minLengthSeq is not None:
+        idxMultiplier = feature1.size(1) + 1
+    peaks = []
+    for b in range(feature1.size(0)):
+        score = F.cosine_similarity(feature1[b, :seqLens[b]], feature2[b, :seqLens[b]], dim=-1)
+        score = 1 - maxMinNorm(score)
+        peakIdxs = find_peaks(score.detach().cpu().numpy(), prominence=prominence)[0] + 1
+        peaks.append(torch.LongTensor(np.concatenate((np.array([0]), peakIdxs))))
     return peaks
 
-def jchBoundaryDetector(encodedData, final_length_factor, minLengthSeq=None, step_reduction=0.2):
+def jchBoundaryDetector(features, final_length_factor, minLengthSeq=None, step_reduction=0.2):
+    encodedData = torch.cat((features[0], features[1][:, -1, :].unsqueeze(1)), dim=1)
     assert not torch.isnan(encodedData).any()
     device = encodedData.device
     encFlat = F.pad(encodedData.reshape(-1, encodedData.size(-1)).detach(), (0, 0, 1, 0))

@@ -251,16 +251,17 @@ class CPCAR(nn.Module):
                     seqEndIdx = torch.arange(0, x.size(0)*x.size(1) + 1, x.size(1), device=x.device)
                     boundaries = torch.unique(torch.cat((boundaries, seqEndIdx)), sorted=True)
                 elif self.segmentationType == 'jch':
-                    boundaries = jchBoundaryDetector(x, self.segmentationThreshold**l, minLengthSeq, self.stepReduction)                                    
+                    boundaries = jchBoundaryDetector((x[:, :-1, :], x[:, 1:, :]), self.segmentationThreshold**l, minLengthSeq, self.stepReduction)                                    
                 elif self.segmentationType == 'kreuk':
-                    boundaries = kreukBoundaryDetector(x, self.segmentationThreshold, minLengthSeq)
+                    boundaries = kreukBoundaryDetector((x[:, :-1, :], x[:, 1:, :]), self.segmentationThreshold, torch.ones(x.size(0), dtype=torch.int64, device=x.device) * x.size(1), minLengthSeq)
                 elif self.segmentationType == 'jhu':
+                    raise NotImplementedError
                     xPadded, compressedMatrices, compressedLens =  jhuBoundaryDetector(x, self.segmentationThreshold, minLengthSeq)
                     packedCompressedX = torch.nn.utils.rnn.pack_padded_sequence(xPadded, compressedLens, batch_first=True, enforce_sorted=False)
                 else:
                     raise NotImplementedError
                 if self.segmentationType in ['jch', 'kreuk'] or label is not None:
-                    compressMatrices, compressedLens = getAverageSlices(boundaries, x.size(1), x.device, minLengthSeq)
+                    compressMatrices, compressedLens, segmentLens = getAverageSlices(boundaries, x.size(1), x.device, minLengthSeq)
                     packedCompressedX = compress_batch(
                         x, compressMatrices, compressedLens, pack=True
                     )
@@ -273,7 +274,8 @@ class CPCAR(nn.Module):
                 outs.append({
                     'encodedData': segments,
                     'states': o,
-                    'seqLens': compressedLens.cuda()
+                    'seqLens': compressedLens.cuda(),
+                    'segmentLens': segmentLens
                 })
                 hs.append(packedH)
             else:

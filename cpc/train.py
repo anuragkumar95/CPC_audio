@@ -1042,10 +1042,10 @@ def parseArgs(argv):
 
 
 if __name__ == "__main__":
-    #import ptvsd
-    #ptvsd.enable_attach(('0.0.0.0', 7310))
-    #print("Attach debugger now")
-    #ptvsd.wait_for_attach()
+    # import ptvsd
+    # ptvsd.enable_attach(('0.0.0.0', 7310))
+    # print("Attach debugger now")
+    # ptvsd.wait_for_attach()
 
     torch.multiprocessing.set_start_method('spawn')
     args = sys.argv[1:]

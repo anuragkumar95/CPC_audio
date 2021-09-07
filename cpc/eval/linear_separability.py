@@ -40,7 +40,7 @@ def getCriterion(args, dim_features, dim_inter, speakers):
             criterion = cr.CTCPhoneCriterion(dim_features,
                                              nPhones, 
                                              args.get_encoded,
-                                             nLayers=2,
+                                             nLayers=args.numLayers,
                                              forbid_blank=args.CTC_forbid_blank)
     else:
         labelKey = 'speaker'
@@ -126,7 +126,7 @@ def perStep(valLoader,
     print(f"Average PER {avgPER}")
     print(f"Standard deviation PER {math.sqrt(varPER)}")
     logs = {"avgPER": avgPER,  "stdPER": math.sqrt(varPER)}
-    results = pd.DataFrame(results)
+    # results = pd.DataFrame(results)
     # results.to_csv('PER_results')
     utils.save_logs(logs, f"{pathCheckpoint}_logsVal.json")
 
@@ -220,10 +220,10 @@ def run(feature_maker,
 
         logs_train = train_step(feature_maker, criterion, train_loader,
                                 optimizer, CPCLevel, label_key=label_key, centerpushSettings=centerpushSettings)
-        computeValAccuracy = not isinstance(criterion.module, cr.CTCPhoneCriterion) or epoch == n_epochs - 1
+        # computeValAccuracy = not isinstance(criterion.module, cr.CTCPhoneCriterion) or epoch == n_epochs - 1
         logs_val = val_step(feature_maker, criterion, val_loader, 
                             CPCLevel, 
-                            computeAccuracy=computeValAccuracy,
+                            computeAccuracy=True,
                             label_key=label_key, centerpushSettings=centerpushSettings)
 
         print('')
@@ -235,7 +235,7 @@ def run(feature_maker,
         print('_'*50)
         print('')
 
-        if computeValAccuracy and logs_val["locAcc_val"] > best_acc:
+        if logs_val["locAcc_val"] > best_acc:
             best_state = deepcopy(fl.get_module(feature_maker).state_dict())
             best_acc = logs_val["locAcc_val"]
 
@@ -347,13 +347,13 @@ def trainLinsepClassification(
 def parse_args(argv):
     parser = argparse.ArgumentParser(description='Linear separability trainer'
                                      ' (default test in speaker separability)')
-    parser.add_argument('pathDB', type=str,
+    parser.add_argument('--pathDB', type=str, nargs="+",
                         help="Path to the directory containing the audio data.")
-    parser.add_argument('pathTrain', type=str,
+    parser.add_argument('--pathTrain', type=str, nargs="+",
                         help="Path to the list of the training sequences.")
-    parser.add_argument('pathVal', type=str,
+    parser.add_argument('--pathVal', type=str, nargs="+",
                         help="Path to the list of the test sequences.")
-    parser.add_argument('load', type=str, nargs='*',
+    parser.add_argument('--load', type=str, nargs='*',
                         help="Path to the checkpoint to evaluate.")
     parser.add_argument('--pathPhone', type=str, default=None,
                         help="Path to the phone labels. If given, will"
@@ -381,7 +381,7 @@ def parse_args(argv):
                         " as the linear classifier")
     parser.add_argument('--no_pretraining', action='store_true',
                         help="If activated, work from an untrained model.")
-    parser.add_argument('--file_extension', type=str, default=".flac",
+    parser.add_argument('--file_extension', type=str, nargs="+", default=".flac",
                         help="Extension of the audio files in pathDB.")
     parser.add_argument('--save_step', type=int, default=-1,
                         help="Frequency at which a checkpoint should be saved,"

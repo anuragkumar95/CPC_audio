@@ -90,7 +90,7 @@ class PredictionNetwork(nn.Module):
                 self.predictors.append(
                     ShiftedConv(dimOutputAR, dimOutputEncoder, 12))
             elif rnnMode == 'transformer':
-                from transformers import buildTransformerAR
+                from cpc.transformers import buildTransformerAR
                 self.predictors.append(
                     buildTransformerAR(dimOutputEncoder,
                                        1,
@@ -384,12 +384,18 @@ class CTCPhoneCriterion(BaseCriterion):
 
         super(CTCPhoneCriterion, self).__init__()
         self.linear = (nLayers == 1)
-        if self.linear:
-            self.PhoneCriterionClassifier = nn.Linear(dimEncoder, nPhones + 1)
-        else:
-            self.lstm = torch.nn.LSTM(dimEncoder, dimEncoder, num_layers=1, batch_first=True)
+        self.PhoneCriterionClassifier = nn.Linear(dimEncoder, nPhones + 1)
+        if not self.linear:
+            self.lstm = torch.nn.LSTM(dimEncoder, dimEncoder, num_layers=1, batch_first=True, 
+            bidirectional=True)
+            # self.PhoneCriterionClassifier = nn.Sequential(
+            #     nn.Linear(dimEncoder, 1024),
+            #     nn.ReLU(),
+            #     # nn.Dropout(0.5),
+            #     nn.Linear(1024, nPhones + 1),
+            # )
             self.PhoneCriterionClassifier = torch.nn.Conv1d(
-                dimEncoder, nPhones + 1, 8, stride=4)
+                dimEncoder * 2, nPhones + 1, 8, stride=4)
         self.lossCriterion = nn.CTCLoss(blank=nPhones, zero_infinity=True)
         self.onEncoder = onEncoder
         self.BLANK_LABEL = nPhones
@@ -404,10 +410,15 @@ class CTCPhoneCriterion(BaseCriterion):
             cFeature = cFeature.contiguous().view(B*S, H)
             return self.PhoneCriterionClassifier(cFeature).view(B, S, -1)
         else:
+            try:
+                self.lstm.flatten_parameters()
+            except RuntimeError:
+                pass
             x = self.lstm(cFeature)[0]
             x = x.permute(0, 2, 1)
             x = self.PhoneCriterionClassifier(x)
             return x.permute(0, 2, 1)
+            # return x
 
     def forward(self, cFeature, otherEncoded, label, computeAccuracy=False):
         if isinstance(cFeature, dict):  # Second head uses smart pooling, therefore variable seqLens
