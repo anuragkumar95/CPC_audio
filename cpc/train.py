@@ -50,7 +50,8 @@ def getCriterion(args, downsampling, nSpeakers, nPhones):
                                                         no_negs_in_match_window=args.CPCCTCNoNegsMatchWin,
                                                         limit_negs_in_batch=args.limitNegsInBatch,
                                                         mode=args.cpc_mode,
-                                                        rnnMode=args.rnnMode,
+                                                        rnnModeRegHead=args.rnnModeRegHead,
+                                                        rnnModeDownHead=args.rnnModeDownHead,
                                                         dropout=args.dropout,
                                                         nSpeakers=nSpeakers,
                                                         speakerEmbedding=args.speakerEmbedding,
@@ -58,7 +59,8 @@ def getCriterion(args, downsampling, nSpeakers, nPhones):
                                                         numLevels=args.CPCCTCNumLevels,
                                                         segmentationThreshold=args.segmentationThreshold,
                                                         smartPooling=args.smartPooling,
-                                                        stepReduction=args.stepReduction)
+                                                        stepReduction=args.stepReduction,
+                                                        NoARonRegHead=args.NoARonRegHead)
 
             else:
                 cpcCriterion = cr.CPCUnsupersivedCriterion(args.nPredicts,

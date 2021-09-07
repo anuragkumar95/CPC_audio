@@ -173,7 +173,8 @@ class CPCAR(nn.Module):
                  minLengthSeqMinusOne,
                  mode="GRU",
                  reverse=False,
-                 segmentationType='jch'):
+                 segmentationType='jch',
+                 NoARonRegHead=False):
 
         super(CPCAR, self).__init__()
         self.RESIDUAL_STD = 0.1
@@ -207,6 +208,7 @@ class CPCAR(nn.Module):
         self.stepReduction = stepReduction
         self.minLengthSeqMinusOne = minLengthSeqMinusOne
         self.segmentationType = segmentationType
+        self.NoARonRegHead = NoARonRegHead
 
     def getDimOutput(self):
         return self.heads[0].hidden_size
@@ -235,7 +237,10 @@ class CPCAR(nn.Module):
         outs = []
         hs = []
 
-        o, h = self.heads[0](x, self.hidden[0])
+        if self.NoARonRegHead:
+            o, h = x, x
+        else:
+            o, h = self.heads[0](x, self.hidden[0])
         
         outs.append(o)
         hs.append(h)

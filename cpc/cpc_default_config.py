@@ -104,12 +104,19 @@ def set_default_cpc_config(parser):
                        choices=['GRU', 'LSTM', 'RNN', 'no_ar', 'transformer'],
                        help="Architecture to use for the auto-regressive "
                        "network (default is lstm).")
+    group.add_argument('--NoARonRegHead', action='store_true')
     group.add_argument('--nLevelsGRU', type=int, default=1,
                        help='Number of layers in the autoregressive network.')
-    group.add_argument('--rnnMode', type=str, default='transformer',
+    group.add_argument('--rnnModeRegHead', type=str, default='transformer',
                        choices=['transformer', 'RNN', 'LSTM', 'linear',
                                 'ffd', 'conv4', 'conv8', 'conv12', 'none'],
-                       help="Architecture to use for the prediction network")
+                       help="Architecture to use for the prediction network"
+                       "for the regular head in hierarchical architecture")
+    group.add_argument('--rnnModeDownHead', type=str, default='transformer',
+                       choices=['transformer', 'RNN', 'LSTM', 'linear',
+                                'ffd', 'conv4', 'conv8', 'conv12', 'none'],
+                       help="Architecture to use for the prediction network"
+                       "for the downsampled head in hierarchical architecture")
     group.add_argument('--dropout', action='store_true',
                        help="Add a dropout layer at the output of the "
                        "prediction network.")

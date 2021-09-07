@@ -5,6 +5,13 @@ import torch.nn.functional as F
 
 from .criterion import BaseCriterion, EqualizedConv1d  # , # PredictionNetwork
 
+class Identity(nn.Module):
+
+    def __init__(self, *args):
+        super(Identity, self).__init__()
+
+    def forward(self, x):
+        return x
 
 class _SOFT_ALIGN(autograd.Function):
     """Soft-align a set of predictions to some vectors.
@@ -117,6 +124,8 @@ class PredictionNetwork(nn.Module):
                                        1,
                                        sizeInputSeq,
                                        False))
+            elif rnnMode == 'none':
+                self.predictors.append(Identity())
             else:
                 self.predictors.append(
                     nn.Linear(dimOutputAR, dimOutputEncoder, bias=False))
@@ -162,6 +171,7 @@ class CPCUnsupersivedCriterion(BaseCriterion):
                  numLevels,             # Number of CPC heads
                  smartPooling,
                  stepReduction,
+                 NoARonRegHead,
                  allowed_skips_beg=0,     # number of predictions that we can skip at the beginning
                  allowed_skips_end=0,     # number of predictions that we can skip at the end
                  predict_self_loop=False, # always predict a repetition of the first symbol
@@ -173,7 +183,9 @@ class CPCUnsupersivedCriterion(BaseCriterion):
                  loss_temp=1.0,
                  limit_negs_in_batch=None,
                  mode=None,
-                 rnnMode=False,
+                # rnnMode=False,
+                 rnnModeRegHead=False,
+                 rnnModeDownHead=False,
                  dropout=False,
                  speakerEmbedding=0,
                  nSpeakers=0,
@@ -197,11 +209,11 @@ class CPCUnsupersivedCriterion(BaseCriterion):
         self.no_negs_in_match_window = no_negs_in_match_window
         self.maxSizeInputSeq = sizeInputSeq
         self.wPredictions = nn.ModuleList()
-        self.wPredictions.append(PredictionNetwork(nPredicts, dimOutputAR, dimOutputEncoder, rnnMode=rnnMode, dropout=dropout, 
-                                                   sizeInputSeq=self.maxSizeInputSeq - nMatched))
+        self.wPredictions.append(PredictionNetwork(nPredicts, dimOutputAR if not NoARonRegHead else dimOutputEncoder, dimOutputEncoder, 
+                                                    rnnMode=rnnModeRegHead, dropout=dropout, sizeInputSeq=self.maxSizeInputSeq - nMatched))
         for l in range(1, numLevels):
             nMatched = max(1, int(round(2* nMatched * segmentationThreshold)))
-            self.wPredictions.append(PredictionNetwork(nMatched, dimOutputAR, dimOutputEncoder, rnnMode=rnnMode, dropout=dropout, 
+            self.wPredictions.append(PredictionNetwork(nMatched, dimOutputAR, dimOutputEncoder, rnnMode=rnnModeDownHead, dropout=dropout, 
                                                         sizeInputSeq=self.maxSizeInputSeq - nMatched if smartPooling else int(sizeInputSeq * segmentationThreshold ** l) - nMatched))
             self.nMatched.append(nMatched)
         self.learn_blank = learn_blank
@@ -239,7 +251,9 @@ class CPCUnsupersivedCriterion(BaseCriterion):
         self.numLevels = numLevels
         self.smartPooling = smartPooling
         self.stepReduction = stepReduction
-        self.rnnMode = rnnMode
+        # self.rnnMode = rnnMode
+        self.rnnModeRegHead=rnnModeRegHead
+        self.rnnModeDownHead=rnnModeDownHead
         self.simMeasure = simMeasure
         self.EPS = 1e-12
 
@@ -344,7 +358,7 @@ class CPCUnsupersivedCriterion(BaseCriterion):
             embeddedSpeaker = self.speakerEmb(l_)
             cFeature = torch.cat([cFeature, embeddedSpeaker], dim=2)
 
-        if self.rnnMode == 'transformer' and self.smartPooling and level > 0:
+        if self.rnnModeDownHead == 'transformer' and self.smartPooling and level > 0:
             cFeature = F.pad(cFeature, (0, 0, 0, self.maxSizeInputSeq - self.nMatched[level] - cFeature.size(1)))
         # Predictions, BS x Len x D x nPreds
         predictions = self.wPredictions[level](cFeature)[:, :maxWindowSize, :, :]

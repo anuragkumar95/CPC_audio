@@ -66,7 +66,7 @@ def getAverageSlices(peaks, originalLength, device, minLengthSeq=None):
     seqIdx = torch.nn.utils.rnn.pad_sequence(
         torch.split(peaks[1:] % originalLength, tuple(cutpoints[1:]-cutpoints[:-1])), batch_first=True)
     seqIdx[seqIdx==0] = originalLength
-    seqIdx = F.pad(seqIdx, (1,0,0,0))
+    seqIdx = F.pad(seqIdx, (1,0,0,0)).to(device=device)
 
     frame_idxs = torch.arange(originalLength, device=device).view(1, 1, -1)
     compressMatrices = (
