@@ -13,6 +13,7 @@ from copy import deepcopy
 import os
 import tqdm
 import math
+import random
 
 import cpc.criterion as cr
 import cpc.feature_loader as fl
@@ -546,8 +547,18 @@ def main(argv):
     model = torch.nn.DataParallel(model, device_ids=range(args.nGPU))
 
     # Dataset
-    seq_train = filterSeqs(args.pathTrain, seqNames)
-    seq_val = filterSeqs(args.pathVal, seqNames)
+    if args.pathTrain is not None and len(args.pathTrain) == len(args.pathDB):
+        seq_train = filterSeqs(args.pathTrain, seqNames)
+    else:
+        seq_train = seqNames
+
+    if args.pathVal is None:
+        random.shuffle(seq_train)
+        sizeTrain = int(0.99 * len(seq_train))
+        seq_train, seq_val = seq_train[:sizeTrain], seq_train[sizeTrain:]
+        print(f'Found files: {len(seq_train)} train, {len(seq_val)} val')
+    else:
+        seq_val = filterSeqs(args.pathVal, seqNames)
 
     if args.debug:
         seq_train = seq_train[:1000]
