@@ -10,3 +10,4 @@ dummy.py
 exps*
 *.csv
 *.png
+*.pt
