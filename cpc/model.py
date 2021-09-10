@@ -173,7 +173,7 @@ class CPCAR(nn.Module):
                  minLengthSeqMinusOne,
                  mode="GRU",
                  reverse=False,
-                 segmentationType='jch',
+                 segmentationType='kreuk',
                  NoARonRegHead=False):
 
         super(CPCAR, self).__init__()
@@ -248,7 +248,8 @@ class CPCAR(nn.Module):
         for l in range(1, self.numLevels):
             if self.smartPooling:
                 minLengthSeq = max(1, int(round(2* self.minLengthSeqMinusOne * self.segmentationThreshold**l))) + 1
-                if label is not None:
+                if self.segmentationType == 'groundTruth':
+                    assert label is not None, "To use ground truth segmentation labels must be provided"
                     diffs = torch.diff(label, dim=1)
                     phoneChanges = torch.cat((torch.ones((label.shape[0], 1)).cuda(), diffs), dim=1)
                     boundaries = torch.nonzero(phoneChanges.contiguous().view(-1), as_tuple=True)[0]
@@ -382,17 +383,15 @@ class CPCModel(nn.Module):
 
     def __init__(self,
                  encoder,
-                 AR,
-                 label=None):
+                 AR):
 
         super(CPCModel, self).__init__()
         self.gEncoder = encoder
         self.gAR = AR
-        self.label = label
 
     def forward(self, batchData, label):
         encodedData = self.gEncoder(batchData).permute(0, 2, 1)
-        cFeature = self.gAR(encodedData) if self.label is None else self.gAR(encodedData, label)
+        cFeature = self.gAR(encodedData, label)
         return cFeature, encodedData, label
 
 class CPCModelNullspace(nn.Module):

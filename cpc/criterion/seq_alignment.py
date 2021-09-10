@@ -114,7 +114,7 @@ def NeedlemanWunschAlignScore(seq1, seq2, d, m, r, normalize=True):
     return res
 
 
-def get_seq_PER(data):
+def getSeqPER(data):
     seqLabels, detectedLabels = data
     return NeedlemanWunschAlignScore(seqLabels, detectedLabels, -1, -1, 0,
                                      normalize=True)
@@ -122,7 +122,7 @@ def get_seq_PER(data):
 def getPERSample(data, nKeep=20):
     pred, labelSeq, blankLabel = data
     predSeq = beam_search(pred, nKeep, blankLabel)[0][1]
-    return get_seq_PER(labelSeq, predSeq)
+    return getSeqPER(labelSeq, predSeq)
 
 def getPERDataset(dataLoader, featureMaker, blankLabel):
 
@@ -146,7 +146,7 @@ def getPERDataset(dataLoader, featureMaker, blankLabel):
             seqLabels = labels[rank, :S]
             preds = beam_search(output[rank],
                                 n_keep_beam_search, blankLabel)[0][1]
-            value = get_seq_PER(seqLabels, preds)
+            value = getSeqPER(seqLabels, preds)
             with lock:
                 outScore.value += value
 

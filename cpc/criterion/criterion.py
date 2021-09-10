@@ -6,7 +6,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from .custom_layers import EqualizedLinear, EqualizedConv1d
-from cpc.criterion.seq_alignment import collapseLabelChain
+from cpc.criterion.seq_alignment import collapseLabelChain, getSeqPER
+import random
 
 class Identity(nn.Module):
 
@@ -342,18 +343,26 @@ class SpeakerDoubleCriterion(BaseCriterion):
 
 class PhoneCriterion(BaseCriterion):
 
-    def __init__(self, dimEncoder, nPhones, onEncoder,
-                 nLayers=1):
+    def __init__(self, dimEncoder, nPhones, onEncoder, linear=False, useLSTM=True, 
+                 useConvClassifier=False):
 
         super(PhoneCriterion, self).__init__()
-        if nLayers == 1:
-            self.PhoneCriterionClassifier = nn.Linear(dimEncoder, nPhones)
+        self.useLSTM = useLSTM
+        self.useConvClassifier = useConvClassifier
+        d = 2 if useLSTM else 1
+        if linear:
+            self.PhoneCriterionClassifier = nn.Linear(dimEncoder * d, nPhones + 1)
+        elif useConvClassifier:
+            self.PhoneCriterionClassifier = torch.nn.Conv1d(
+                dimEncoder * d, nPhones + 1, 8, stride=4)
         else:
-            outLayers = [nn.Linear(dimEncoder, nPhones)]
-            for l in range(nLayers - 1):
-                outLayers.append(nn.ReLU())
-                outLayers.append(nn.Linear(nPhones, nPhones))
-            self.PhoneCriterionClassifier = nn.Sequential(*outLayers)
+            self.PhoneCriterionClassifier = nn.Sequential(
+                nn.Linear(dimEncoder * d, dimEncoder * 2*d),
+                nn.ReLU(),
+                nn.Linear(dimEncoder * 2*d, nPhones + 1),
+            )
+        if useLSTM:
+            self.lstm = torch.nn.LSTM(dimEncoder, dimEncoder, num_layers=1, batch_first=True, bidirectional=True)
 
         self.lossCriterion = nn.CrossEntropyLoss()
         self.onEncoder = onEncoder
@@ -371,31 +380,45 @@ class PhoneCriterion(BaseCriterion):
         acc = (predictions.max(1)[1] == label).double().mean().view(1, -1)
         return loss, acc
 
-    def getPrediction(self, cFeature):
-        batchSize, seqSize = cFeature.size(0), cFeature.size(1)
-        cFeature = cFeature.contiguous().view(batchSize * seqSize, -1)
-        output = self.PhoneCriterionClassifier(cFeature)
-        return output.view(batchSize, seqSize, -1)
+    def getPrediction(self, x):
+        if self.useLSTM:
+            try:
+                self.lstm.flatten_parameters()
+            except RuntimeError:
+                pass
+            x = self.lstm(x)[0]
+            if isinstance(x, torch.nn.utils.rnn.PackedSequence):
+                x = torch.nn.utils.rnn.pad_packed_sequence(x, batch_first=True)[0]
+        if self.useConvClassifier:
+            x = x.permute(0, 2, 1)
+            x = self.PhoneCriterionClassifier(x)
+            return x.permute(0, 2, 1)
+        else:
+            return self.PhoneCriterionClassifier(x)
 
 
 class CTCPhoneCriterion(BaseCriterion):
 
-    def __init__(self, dimEncoder, nPhones, onEncoder, nLayers=2, forbid_blank=False):
+    def __init__(self, dimEncoder, nPhones, onEncoder, linear=False, useLSTM=True, 
+                 useConvClassifier=False,forbid_blank=False):
 
         super(CTCPhoneCriterion, self).__init__()
-        self.linear = (nLayers == 1)
-        self.PhoneCriterionClassifier = nn.Linear(dimEncoder, nPhones + 1)
-        if not self.linear:
-            self.lstm = torch.nn.LSTM(dimEncoder, dimEncoder, num_layers=1, batch_first=True, 
-            bidirectional=True)
-            # self.PhoneCriterionClassifier = nn.Sequential(
-            #     nn.Linear(dimEncoder, 1024),
-            #     nn.ReLU(),
-            #     # nn.Dropout(0.5),
-            #     nn.Linear(1024, nPhones + 1),
-            # )
+        self.useLSTM = useLSTM
+        self.useConvClassifier = useConvClassifier
+        d = 2 if useLSTM else 1
+        if linear:
+            self.PhoneCriterionClassifier = nn.Linear(dimEncoder * d, nPhones + 1)
+        elif useConvClassifier:
             self.PhoneCriterionClassifier = torch.nn.Conv1d(
-                dimEncoder * 2, nPhones + 1, 8, stride=4)
+                dimEncoder * d, nPhones + 1, 8, stride=4)
+        else:
+            self.PhoneCriterionClassifier = nn.Sequential(
+                nn.Linear(dimEncoder * d, dimEncoder * 2*d),
+                nn.ReLU(),
+                nn.Linear(dimEncoder * 2*d, nPhones + 1),
+            )
+        if useLSTM:
+            self.lstm = torch.nn.LSTM(dimEncoder, dimEncoder, num_layers=1, batch_first=True, bidirectional=True)
         self.lossCriterion = nn.CTCLoss(blank=nPhones, zero_infinity=True)
         self.onEncoder = onEncoder
         self.BLANK_LABEL = nPhones
@@ -404,38 +427,41 @@ class CTCPhoneCriterion(BaseCriterion):
     def extra_repr(self):
         return f"CTCPhoneCriterion(..., onEncoder={self.onEncoder}, forbid_blank={self.forbid_blank})"
 
-    def getPrediction(self, cFeature):
-        B, S, H = cFeature.size()
-        if self.linear:
-            cFeature = cFeature.contiguous().view(B*S, H)
-            return self.PhoneCriterionClassifier(cFeature).view(B, S, -1)
-        else:
+    def getPrediction(self, x):
+        if self.useLSTM:
             try:
                 self.lstm.flatten_parameters()
             except RuntimeError:
                 pass
-            x = self.lstm(cFeature)[0]
+            x = self.lstm(x)[0]
+            if isinstance(x, torch.nn.utils.rnn.PackedSequence):
+                x = torch.nn.utils.rnn.pad_packed_sequence(x, batch_first=True)[0]
+        if self.useConvClassifier:
             x = x.permute(0, 2, 1)
             x = self.PhoneCriterionClassifier(x)
             return x.permute(0, 2, 1)
-            # return x
+        else:
+            return self.PhoneCriterionClassifier(x)
 
     def forward(self, cFeature, otherEncoded, label, computeAccuracy=False):
-        if isinstance(cFeature, dict):  # Second head uses smart pooling, therefore variable seqLens
+        onDownsampledHead = isinstance(cFeature, dict)
+        if onDownsampledHead:
             targetSizePred = cFeature['seqLens']
+            otherEncoded = cFeature['encodedData']
             cFeature = cFeature['states']
             B, _, H = cFeature.size()
+            if self.useLSTM:
+                cFeature = torch.nn.utils.rnn.pack_padded_sequence(cFeature, targetSizePred.cpu(), batch_first=True, enforce_sorted=False)
+                otherEncoded = torch.nn.utils.rnn.pack_padded_sequence(otherEncoded, targetSizePred.cpu(), batch_first=True, enforce_sorted=False)
         else:
             B, S, H = cFeature.size()
             targetSizePred = torch.ones(B, dtype=torch.int64,
                                     device=cFeature.device) * S
-        if not self.linear:
+        if self.useConvClassifier:
             targetSizePred = ((targetSizePred - 8) // 4 + 1)
 
-        if self.onEncoder:
-            predictions = self.getPrediction(otherEncoded)
-        else:
-            predictions = self.getPrediction(cFeature)
+        features = otherEncoded if self.onEncoder else cFeature
+        predictions = self.getPrediction(features)
         if self.forbid_blank:
             predictions += (
                 -1e4 * 
@@ -447,6 +473,18 @@ class CTCPhoneCriterion(BaseCriterion):
         loss = self.lossCriterion(predictions.permute(1, 0, 2), label,
                                   targetSizePred, sizeLabels).view(1, -1)
         avgPER = 0.
+        if computeAccuracy:
+            predictedPhones = predictions.max(2)[1].detach().cpu()
+            numSegments = torch.nonzero(torch.diff(predictedPhones[0, :]), as_tuple=True)[0]
+            # if random.random() < 0.005:
+            #     print("Predicted phones: ", predictedPhones[0, :int(numSegments[0].item())])
+            #     print("Expected phones: ", label[0, :sizeLabels[0]])
+            predictedPhones, sizePredictions = collapseLabelChain(predictedPhones)
+            for b in range(B):
+                predictedPhone = predictedPhones[b, :sizePredictions[b]]
+                predictedPhone = predictedPhone[predictedPhone != self.BLANK_LABEL]
+                avgPER += getSeqPER((predictedPhone, label[b, :sizeLabels[b]].cpu()))
+            avgPER /= B
         return loss, avgPER * torch.ones(1, 1, device=loss.device)
 
 

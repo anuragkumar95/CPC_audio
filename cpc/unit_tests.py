@@ -267,13 +267,13 @@ class TestPER(unittest.TestCase):
         pass
 
     def testPER(self):
-        from .criterion.seq_alignment import get_seq_PER
+        from .criterion.seq_alignment import getSeqPER
 
         ref_seq = [0, 1, 1, 2, 0, 2, 2]
         pred_seq = [1, 1, 2, 2, 0, 0]
 
         expected_PER = 4. / 7.
-        eq_(get_seq_PER(ref_seq, pred_seq), expected_PER)
+        eq_(getSeqPER(ref_seq, pred_seq), expected_PER)
 
 
 class TestEncoderBuilder(unittest.TestCase):

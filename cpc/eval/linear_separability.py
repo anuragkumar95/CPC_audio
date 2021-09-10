@@ -20,9 +20,7 @@ import cpc.feature_loader as fl
 import cpc.utils.misc as utils
 from cpc.dataset import AudioBatchData, findAllSeqs, filterSeqs, parseSeqLabels
 from cpc.model import CPCModelNullspace
-from cpc.criterion.seq_alignment import collapseLabelChain, get_seq_PER
-from torch.multiprocessing import Pool
-# import pandas as pd
+# from cpc.criterion.seq_alignment import collapseLabelChain, getSeqPER
 
 
 def getCriterion(args, dim_features, dim_inter, speakers):
@@ -35,13 +33,18 @@ def getCriterion(args, dim_features, dim_inter, speakers):
         if not args.CTC:
             print(f"Running phone separability with aligned phones")
             criterion = cr.PhoneCriterion(dim_features,
-                                          nPhones, args.get_encoded)
+                                          nPhones, args.get_encoded,
+                                          useLSTM=args.useLSTM,
+                                          useConvClassifier=args.convClassifier,
+                                          linear=args.linearClassifier)
         else:
             print(f"Running phone separability with CTC loss")
             criterion = cr.CTCPhoneCriterion(dim_features,
                                              nPhones, 
                                              args.get_encoded,
-                                             nLayers=args.numLayers,
+                                             useLSTM=args.useLSTM,
+                                             useConvClassifier=args.convClassifier,
+                                             linear=args.linearClassifier,
                                              forbid_blank=args.CTC_forbid_blank)
     else:
         labelKey = 'speaker'
@@ -53,84 +56,6 @@ def getCriterion(args, dim_features, dim_inter, speakers):
     return criterion, labelKey, phoneLabels
 
 
-def perStep(valLoader,
-            model,
-            criterion,
-            CPCLevel,
-            pathCheckpoint):
-
-    model.eval()
-    criterion.eval()
-
-    avgPER = 0
-    varPER = 0
-    nItems = 0
-
-    # results = []
-
-    print("Starting the PER computation")
-    for step, fulldata in tqdm.tqdm(enumerate(valLoader)):
-        with torch.no_grad():
-            batch_data, label_data = fulldata
-            label = label_data['phone']
-            cFeature, encodedData, _ = model(batch_data, None)
-            cFeature = cFeature[CPCLevel]
-            if isinstance(cFeature, dict):  # Second head uses smart pooling, therefore variable seqLens
-                targetSizePred = cFeature['seqLens']
-                cFeature = cFeature['states']
-                B, _, H = cFeature.size()
-            else:
-                B, S, H = cFeature.size()
-                targetSizePred = torch.ones(B, dtype=torch.int64,
-                                        device=cFeature.device) * S
-            if not criterion.module.linear:
-                targetSizePred = ((targetSizePred - 8) // 4 + 1)
-            if criterion.module.onEncoder:
-                predictions = criterion.module.getPrediction(encodedData)
-            else:
-                predictions = criterion.module.getPrediction(cFeature)
-            if criterion.module.forbid_blank:
-                predictions += (
-                    -1e4 * 
-                    (
-                        torch.arange(criterion.module.BLANK_LABEL + 1, 
-                        device=predictions.device) == criterion.module.BLANK_LABEL
-                    ).float().view(1, 1, criterion.module.BLANK_LABEL + 1))
-            predictions = torch.nn.functional.log_softmax(predictions, dim=2)
-            label = label.to(predictions.device)
-            label, sizeLabels = collapseLabelChain(label)   
-            predictedPhones = predictions.max(2)[1].detach().cpu()
-            predictedPhones, sizePredictions = collapseLabelChain(predictedPhones)
-            # dataPER = []
-            poolData = []
-            for b in range(B):
-                predictedPhone = predictedPhones[b, :sizePredictions[b]]
-                predictedPhone = predictedPhone[predictedPhone != criterion.module.BLANK_LABEL]
-                poolData.append(get_seq_PER((predictedPhone, label[b, :sizeLabels[b]].cpu())))
-                # results.append({
-                #     'step': step,
-                #     'predicted': predictedPhone.tolist(),
-                #     'target': label[b, :sizeLabels[b]].tolist(),
-                #     'PER': poolData[-1]
-                # })
-                # dataPER.append((
-                #     predictedPhone, label[b, :sizeLabels[b]].cpu()
-                # ))
-            # with Pool(B) as p:
-            #     poolData = p.map(get_seq_PER, dataPER)
-            avgPER += sum([x for x in poolData])
-            varPER += sum([x*x for x in poolData])
-            nItems += len(poolData)
-    avgPER /= nItems
-    varPER /= nItems
-    varPER -= avgPER**2
-    print(f"Average PER {avgPER}")
-    print(f"Standard deviation PER {math.sqrt(varPER)}")
-    logs = {"avgPER": avgPER,  "stdPER": math.sqrt(varPER)}
-    # results = pd.DataFrame(results)
-    # results.to_csv('PER_results')
-    utils.save_logs(logs, f"{pathCheckpoint}_logsVal.json")
-
 
 def train_step(feature_maker, criterion, data_loader, optimizer, CPCLevel, label_key="speaker", centerpushSettings=None):
     if feature_maker.optimize:
@@ -138,15 +63,15 @@ def train_step(feature_maker, criterion, data_loader, optimizer, CPCLevel, label
     criterion.train()
     computeAccuracy = not isinstance(criterion.module, cr.CTCPhoneCriterion)
     if computeAccuracy:
-        logs = {"locLoss_train": 0,  "locAcc_train": 0}
+        logs = {"Loss_train": 0,  "Acc_train": 0}
     else:
-        logs = {"locLoss_train": 0}
+        logs = {"Loss_train": 0}
     for step, fulldata in tqdm.tqdm(enumerate(data_loader)):
 
         optimizer.zero_grad()
         batch_data, label_data = fulldata
         label = label_data[label_key]
-        c_feature, encoded_data, _ = feature_maker(batch_data, None)
+        c_feature, encoded_data, _ = feature_maker(batch_data, label)
         c_feature = c_feature[CPCLevel]
         if not feature_maker.optimize:
             encoded_data = encoded_data.detach()
@@ -165,9 +90,9 @@ def train_step(feature_maker, criterion, data_loader, optimizer, CPCLevel, label
         totLoss.backward()
         optimizer.step()
 
-        logs["locLoss_train"] += np.asarray([all_losses.mean().item()])
+        logs["Loss_train"] += np.asarray([all_losses.mean().item()])
         if computeAccuracy:
-            logs["locAcc_train"] += np.asarray([all_acc.mean().item()])
+            logs["Acc_train"] += np.asarray([all_acc.mean().item()])
 
     logs = utils.update_logs(logs, step)
     logs["iter"] = step
@@ -179,23 +104,24 @@ def val_step(feature_maker, criterion, data_loader, CPCLevel, computeAccuracy, l
     feature_maker.eval()
     criterion.eval()
     if computeAccuracy:
-        logs = {"locLoss_val": 0,  "locAcc_val": 0}
+        accLabel = "Acc_val" if not isinstance(criterion.module, cr.CTCPhoneCriterion) else "PER_val"
+        logs = {"Loss_val": 0,  accLabel: 0}
     else:
-        logs = {"locLoss_val": 0}
+        logs = {"Loss_val": 0}
     for step, fulldata in tqdm.tqdm(enumerate(data_loader)):
         with torch.no_grad():
             batch_data, label_data = fulldata
             label = label_data[label_key]
-            c_feature, encoded_data, _ = feature_maker(batch_data, None)
+            c_feature, encoded_data, _ = feature_maker(batch_data, label)
             c_feature = c_feature[CPCLevel]
             if centerpushSettings:
                 centers, pushDeg = centerpushSettings
                 c_feature = utils.pushToClosestForBatch(c_feature, centers, deg=pushDeg)
                 encoded_data = utils.pushToClosestForBatch(encoded_data, centers, deg=pushDeg)
             all_losses, all_acc = criterion(c_feature, encoded_data, label, computeAccuracy)
-            logs["locLoss_val"] += np.asarray([all_losses.mean().item()])
+            logs["Loss_val"] += np.asarray([all_losses.mean().item()])
             if computeAccuracy:
-                logs["locAcc_val"] += np.asarray([all_acc.mean().item()])
+                logs[accLabel] += np.asarray([all_acc.mean().item()])
     logs = utils.update_logs(logs, step)
     return logs
 
@@ -213,10 +139,11 @@ def run(feature_maker,
         centerpushSettings=None):
 
     start_epoch = len(logs["epoch"])
-    best_acc = -1
 
     start_time = time.time()
-
+    usesCTCLoss = isinstance(criterion.module, cr.CTCPhoneCriterion)
+    accLabel = "Acc_val" if not usesCTCLoss else "PER_val"
+    best_acc = -1 if not usesCTCLoss else np.inf
     for epoch in range(start_epoch, n_epochs):
 
         logs_train = train_step(feature_maker, criterion, train_loader,
@@ -236,9 +163,9 @@ def run(feature_maker,
         print('_'*50)
         print('')
 
-        if logs_val["locAcc_val"] > best_acc:
+        if (usesCTCLoss and logs_val[accLabel] < best_acc) or (not usesCTCLoss and logs_val[accLabel] > best_acc):
             best_state = deepcopy(fl.get_module(feature_maker).state_dict())
-            best_acc = logs_val["locAcc_val"]
+            best_acc = logs_val[accLabel]
 
         logs["epoch"].append(epoch)
         for key, value in dict(logs_train, **logs_val).items():
@@ -307,15 +234,15 @@ def trainLinsepClassification(
         print('_'*50)
         print('')
 
-        if logs_val["locAcc_val"] > best_acc:
+        if logs_val["Acc_val"] > best_acc:
             best_state_cpc = deepcopy(fl.get_module(feature_maker).state_dict())
             best_state_classif_crit = deepcopy(fl.get_module(criterion).state_dict())
             optimizer_state_best_ep = optimizer.state_dict()
             best_epoch = epoch
-            best_acc = logs_val["locAcc_val"]
+            best_acc = logs_val["Acc_val"]
 
-        if logs_train["locAcc_train"] > best_train_acc:
-            best_train_acc = logs_train["locAcc_train"]
+        if logs_train["Acc_train"] > best_train_acc:
+            best_train_acc = logs_train["Acc_train"]
 
         logs["epoch"].append(epoch)
         for key, value in dict(logs_train, **logs_val).items():
@@ -328,10 +255,6 @@ def trainLinsepClassification(
         if (epoch % logs["saveStep"] == 0 and epoch > 0) or epoch == n_epochs - 1:
             model_state_dict = fl.get_module(feature_maker).state_dict()
             criterion_state_dict = fl.get_module(criterion).state_dict()
-
-            # fl.save_checkpoint(model_state_dict, criterion_state_dict,
-            #                    optimizer.state_dict(), best_state,
-            #                    f"{path_checkpoint}_{epoch}.pt")
             utils.save_logs(logs, f"{path_logs}_logs.json")
 
     if path_best_checkpoint:
@@ -426,9 +349,14 @@ def parse_args(argv):
     parser.add_argument('--centerpushDeg', type=float, default=None, help="part of (euclidean) distance to push to the center")
 
     parser.add_argument('--CPCLevel', type=int, default=0, help="")
-    parser.add_argument('--numLayers', type=int, default=2, help="")
+    parser.add_argument('--linearClassifier', action='store_true')
+    parser.add_argument('--convClassifier', action='store_true')
+    parser.add_argument('--useLSTM', action='store_true')
 
     args = parser.parse_args(argv)
+    if args.CPCLevel > 0:
+        assert args.CTC, "To use features of a downsampled CPC head you must use CTC loss (ie. pass the --CTC flag)"
+        assert not args.convClassifier, "To use features of a downsampled CPC head you must use a frame-wise classifier (ie. do not pass the --convClassifier flag)"
     if args.nGPU < 0:
         args.nGPU = torch.cuda.device_count()
     if args.save_step <= 0:
@@ -587,7 +515,13 @@ def main(argv):
 
         with open(f"{args.pathCheckpoint}_args.json", 'w') as file:
             json.dump(vars(args), file, indent=2)
-        perStep(val_loader, model, criterion, args.CPCLevel, args.pathCheckpoint)
+        logs = val_step(model, criterion, val_loader, args.CPCLevel, computeAccuracy=True, 
+                        label_key=labelKey, centerpushSettings=centerpushSettings)
+        for key, value in dict(logs).items():
+            if isinstance(value, np.ndarray):
+                value = value.tolist()
+            logs[key] = value
+        utils.save_logs(logs, f"{pathCheckpoint}_logs.json")
     else:
         # Optimizer
         g_params = list(criterion.parameters())
@@ -633,12 +567,11 @@ def main(argv):
             label_key=labelKey, centerpushSettings=centerpushSettings)
 
 
-
 if __name__ == "__main__":
-    #import ptvsd
-    #ptvsd.enable_attach(('0.0.0.0', 7310))
-    #print("Attach debugger now")
-    #ptvsd.wait_for_attach()
+    # import ptvsd
+    # ptvsd.enable_attach(('0.0.0.0', 7310))
+    # print("Attach debugger now")
+    # ptvsd.wait_for_attach()
     
     torch.multiprocessing.set_start_method('spawn')
     args = sys.argv[1:]

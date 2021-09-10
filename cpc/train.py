@@ -606,7 +606,7 @@ def main(args):
         # AR Network
         arNet = fl.getAR(args)
 
-        cpcModel = model.CPCModel(encoderNet, arNet, args.path_phone_data)
+        cpcModel = model.CPCModel(encoderNet, arNet)
 
     CPChiddenGar, CPChiddenEncoder = args.hiddenGar, args.hiddenEncoder
 
