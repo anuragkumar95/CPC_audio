@@ -400,11 +400,12 @@ class PhoneCriterion(BaseCriterion):
 class CTCPhoneCriterion(BaseCriterion):
 
     def __init__(self, dimEncoder, nPhones, onEncoder, linear=False, useLSTM=True, 
-                 useConvClassifier=False,forbid_blank=False):
+                 useConvClassifier=False,forbid_blank=False, upsample=False):
 
         super(CTCPhoneCriterion, self).__init__()
         self.useLSTM = useLSTM
         self.useConvClassifier = useConvClassifier
+        self.upsample = upsample
         d = 2 if useLSTM else 1
         if linear:
             self.PhoneCriterionClassifier = nn.Linear(dimEncoder * d, nPhones + 1)
@@ -417,6 +418,9 @@ class CTCPhoneCriterion(BaseCriterion):
                 nn.ReLU(),
                 nn.Linear(dimEncoder * 2*d, nPhones + 1),
             )
+        if upsample:
+            self.upsampleLayer = torch.nn.ConvTranspose1d(nPhones + 1, nPhones + 1, kernel_size=1, 
+                                                          stride=3)
         if useLSTM:
             self.lstm = torch.nn.LSTM(dimEncoder, dimEncoder, num_layers=1, batch_first=True, bidirectional=True)
         self.lossCriterion = nn.CTCLoss(blank=nPhones, zero_infinity=True)
@@ -462,6 +466,11 @@ class CTCPhoneCriterion(BaseCriterion):
 
         features = otherEncoded if self.onEncoder else cFeature
         predictions = self.getPrediction(features)
+        if self.upsample:
+            predictions = predictions.permute(0, 2, 1)    
+            predictions = self.upsampleLayer(predictions)
+            predictions = predictions.permute(0, 2, 1) 
+            targetSizePred = (targetSizePred - 1) * 3 + 1
         if self.forbid_blank:
             predictions += (
                 -1e4 * 

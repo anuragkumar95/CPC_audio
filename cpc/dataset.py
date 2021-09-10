@@ -25,6 +25,7 @@ class AudioBatchData(Dataset):
                  seqNames,
                  phoneLabelsDict,
                  nSpeakers,
+                 wordLabelsDict=None,
                  nProcessLoader=50,
                  MAX_SIZE_LOADED=4000000000):
         """
@@ -59,8 +60,13 @@ class AudioBatchData(Dataset):
             phoneLabelsDict["step"]
         self.phoneStep = 0 if phoneLabelsDict is None else \
             self.sizeWindow // self.phoneSize
+        self.wordSize = 0 if wordLabelsDict is None else \
+            wordLabelsDict["step"]
+        self.wordStep = 0 if wordLabelsDict is None else \
+            self.sizeWindow // self.wordSize
 
         self.phoneLabelsDict = deepcopy(phoneLabelsDict)
+        self.wordLabelsDict = deepcopy(wordLabelsDict)
         self.loadNextPack(first=True)
         self.loadNextPack()
         self.doubleLabels = False
@@ -85,6 +91,8 @@ class AudioBatchData(Dataset):
             del self.speakerLabel
         if 'phoneLabels' in self.__dict__:
             del self.phoneLabels
+        if 'wordLabels' in self.__dict__:
+            del self.wordLabels
         if 'seqLabel' in self.__dict__:
             del self.seqLabel
 
@@ -146,6 +154,7 @@ class AudioBatchData(Dataset):
         self.speakerLabel = [0]
         self.seqLabel = [0]
         self.phoneLabels = []
+        self.wordLabels = []
         speakerSize = 0
         indexSpeaker = 0
 
@@ -156,7 +165,8 @@ class AudioBatchData(Dataset):
         for speaker, seqName, seq in self.nextData:
 
             # sometimes some data may be missing
-            if self.phoneLabelsDict is not None and seqName not in self.phoneLabelsDict:
+            if (self.phoneLabelsDict is not None and seqName not in self.phoneLabelsDict) \
+                or (self.wordLabelsDict is not None and seqName not in self.wordLabelsDict):
                 continue
             
             while self.speakers[indexSpeaker] < speaker:
@@ -164,7 +174,10 @@ class AudioBatchData(Dataset):
                 self.speakerLabel.append(speakerSize)
             if self.speakers[indexSpeaker] != speaker:
                 raise ValueError(f'{speaker} invalid speaker')
-
+            
+            if self.wordLabelsDict is not None:
+                self.wordLabels += self.wordLabelsDict[seqName]
+            
             if self.phoneLabelsDict is not None:
                 self.phoneLabels += self.phoneLabelsDict[seqName]
                 newSize = len(self.phoneLabelsDict[seqName]) * self.phoneSize
@@ -183,6 +196,10 @@ class AudioBatchData(Dataset):
         idPhone = idx // self.phoneSize
         return self.phoneLabels[idPhone:(idPhone + self.phoneStep)]
 
+    def getWord(self, idx):
+        idWord = idx // self.wordSize
+        return self.wordLabels[idWord:(idWord + self.wordStep)]
+        
     def getSpeakerLabel(self, idx):
         idSpeaker = next(x[0] for x in enumerate(
             self.speakerLabel) if x[1] > idx) - 1
@@ -203,6 +220,10 @@ class AudioBatchData(Dataset):
         if self.phoneSize > 0:
             label_phone = torch.tensor(self.getPhonem(idx), dtype=torch.long)
             labelData['phone'] = label_phone
+
+        if self.wordSize > 0:
+            label_word = torch.tensor(self.getWord(idx), dtype=torch.long)
+            labelData['word'] = label_word
             # if not self.doubleLabels:
             #     label = label_phone
         # else:

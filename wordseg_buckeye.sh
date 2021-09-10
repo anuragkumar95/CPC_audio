@@ -32,9 +32,9 @@ echo $0 "$@" >> ${SAVE_DIR}/out.txt
 exec python -u cpc/eval/segmentation.py \
     --pathDB /pio/scratch/1/i323106/data/BUCKEYE/test/ \
     --load "$@" \
-    --pathPhone /pio/scratch/1/i325922/data/BUCKEYE/raw/converted_aligned_words.txt \
+    --pathPhone /pio/scratch/1/i323106/data/BUCKEYE/converted_aligned_phones.txt \
+    --pathWords /pio/scratch/1/i325922/data/BUCKEYE/raw/converted_aligned_words.txt \
     --file_extension .wav \
     --pathCheckpoint $SAVE_DIR \
-    --words \
     --nGPU 1 \
     2>&1 | tee -ai ${SAVE_DIR}/out.txt

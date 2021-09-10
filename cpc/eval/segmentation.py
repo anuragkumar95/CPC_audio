@@ -72,7 +72,7 @@ def getCriterion(args, downsampling, nSpeakers):
                                                     sizeInputSeq=sizeInputSeq)
     return cpcCriterion
 
-def evalPhoneSegmentation(featureMaker, criterion, boundaryDetector, dataLoader, labelKey="speaker", 
+def evalPhoneSegmentation(featureMaker, criterion, boundaryDetector, dataLoader, 
                           onEncodings=True, toleranceInFrames=2, wordSegmentation=False):
 
     featureMaker.eval()
@@ -84,8 +84,9 @@ def evalPhoneSegmentation(featureMaker, criterion, boundaryDetector, dataLoader,
     for step, fulldata in tqdm.tqdm(enumerate(dataLoader)):
         with torch.no_grad():
             batchData, labelData = fulldata
-            label = labelData[labelKey]
-            cFeature, encodedData, _ = featureMaker(batchData, label)
+            labelPhones = labelData['phone']
+            label = labelData['word'] if wordSegmentation else labelPhones
+            cFeature, encodedData, _ = featureMaker(batchData, labelPhones)
             if wordSegmentation:
                 cFeature = cFeature[1]
                 encodedData = cFeature['encodedData']
@@ -184,8 +185,10 @@ def parse_args(argv):
     parser.add_argument('--load', type=str, nargs='*',
                         help="Path to the checkpoint to evaluate.")
     parser.add_argument('--pathPhone', type=str, default=None,
-                        help="Path to the phone labels. If given, will"
-                        " compute the phone separability.")
+                        help="Path to the phone labels.")
+    parser.add_argument('--pathWords', type=str, default=None,
+                        help="Path to the word labels. If given, will"
+                        " compute word separability.")
     parser.add_argument('--pathCheckpoint', type=str, default='out',
                         help="Path of the output directory where the "
                         " checkpoints should be dumped.")
@@ -220,8 +223,6 @@ def parse_args(argv):
     parser.add_argument('--gru_level', type=int, default=-1,
                         help='Hidden level of the LSTM autoregressive model to be taken'
                         '(default: -1, last layer).')
-    parser.add_argument('--words', action='store_true',
-                        help='Do word segmentation instead of phones.')
 
     args = parser.parse_args(argv)
     if args.nGPU < 0:
@@ -270,8 +271,9 @@ def main(argv):
     dimFeatures = hiddenEncoder if args.get_encoded else hiddenGAR
 
     phoneLabels, nPhones = parseSeqLabels(args.pathPhone)
-    labelKey = 'phone'
-    
+    wordLabels = None
+    if args.pathWords is not None:
+        wordLabels, nWords = parseSeqLabels(args.pathWords)
     model.cuda()
     downsampling = model.cpc.gEncoder.DOWNSAMPLING if isinstance(model, CPCModelNullspace) else model.gEncoder.DOWNSAMPLING
     model = torch.nn.DataParallel(model, device_ids=range(args.nGPU))
@@ -285,7 +287,7 @@ def main(argv):
         seqNames = seqNames[:100]
 
     db = AudioBatchData(args.pathDB, args.size_window, seqNames,
-                        phoneLabels, len(speakers), nProcessLoader=args.nProcessLoader)
+                        phoneLabels, len(speakers), nProcessLoader=args.nProcessLoader, wordLabelsDict=wordLabels)
 
     batchSize = args.batchSizeGPU * args.nGPU
     dataLoader = db.getDataLoader(batchSize, 'sequential', False, numWorkers=0)
@@ -308,7 +310,7 @@ def main(argv):
         raise NotImplementedError
 
     run(model, criterion, boundaryDetector, dataLoader, pathCheckpoint, args.get_encoded, 
-        labelKey=labelKey, wordSegmentation=args.words)
+        wordSegmentation=args.pathWords is not None)
 
 
 

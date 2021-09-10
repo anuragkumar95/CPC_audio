@@ -20,6 +20,7 @@ if 1:
   parser.add_argument('--CTC_forbid_blank', action='store_true')
   parser.add_argument('--linearClassifier', action='store_true')
   parser.add_argument('--convClassifier', action='store_true')
+  parser.add_argument('--upsampleSeq', action='store_true')
   parser.add_argument('--useLSTM', action='store_true')
   parser.add_argument('--CPCLevel', type=int, default=0, help="")
   args, _ = parser.parse_known_args()
@@ -34,13 +35,15 @@ if 1:
     desc += "_onenc"
   if args.useLSTM:
     desc += "_lstm"
+  if args.upsampleSeq:
+    desc += "_upsample"
   if args.convClassifier:
     desc += "_conv"
   elif not args.linearClassifier:
     desc += "_mlp"
   if args.CPCLevel > 0:
     desc += "_onHead2"
-  print(f"{checkpoint_dir}/linevalBuckeye{eval_ctc}_{checkpoint_no}")
+  print(f"{checkpoint_dir}/linevalBuckeye{desc}_{checkpoint_no}")
 END
 )"
 

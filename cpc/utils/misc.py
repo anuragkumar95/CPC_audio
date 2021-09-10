@@ -79,14 +79,14 @@ def getAverageSlices(peaks, originalLength, device, minLengthSeq=None):
 
 def kreukBoundaryDetector(features, prominence, seqLens, minLengthSeq=None):
     feature1, feature2 = features
-    if minLengthSeq is not None:
-        idxMultiplier = feature1.size(1) + 1
+    isForHierarchicalModel = minLengthSeq is not None
+    idxOffset = feature1.size(1) + 1 if isForHierarchicalModel else 0
     peaks = []
     for b in range(feature1.size(0)):
         score = F.cosine_similarity(feature1[b, :seqLens[b]], feature2[b, :seqLens[b]], dim=-1)
         score = 1 - maxMinNorm(score)
         peakIdxs = find_peaks(score.detach().cpu().numpy(), prominence=prominence)[0] + 1
-        peaks.append(torch.LongTensor(np.concatenate((np.array([0]), peakIdxs))))
+        peaks.append(torch.LongTensor(np.concatenate((np.array([0]), peakIdxs))) + idxOffset * b)
     return peaks
 
 def jchBoundaryDetector(features, final_length_factor, minLengthSeq=None, step_reduction=0.2):

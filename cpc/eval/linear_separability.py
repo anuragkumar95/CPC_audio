@@ -36,7 +36,8 @@ def getCriterion(args, dim_features, dim_inter, speakers):
                                           nPhones, args.get_encoded,
                                           useLSTM=args.useLSTM,
                                           useConvClassifier=args.convClassifier,
-                                          linear=args.linearClassifier)
+                                          linear=args.linearClassifier,
+                                          upsample=args.upsampleSeq)
         else:
             print(f"Running phone separability with CTC loss")
             criterion = cr.CTCPhoneCriterion(dim_features,
@@ -45,7 +46,8 @@ def getCriterion(args, dim_features, dim_inter, speakers):
                                              useLSTM=args.useLSTM,
                                              useConvClassifier=args.convClassifier,
                                              linear=args.linearClassifier,
-                                             forbid_blank=args.CTC_forbid_blank)
+                                             forbid_blank=args.CTC_forbid_blank,
+                                             upsample=args.upsampleSeq)
     else:
         labelKey = 'speaker'
         print(f"Running speaker separability")
@@ -352,6 +354,7 @@ def parse_args(argv):
     parser.add_argument('--linearClassifier', action='store_true')
     parser.add_argument('--convClassifier', action='store_true')
     parser.add_argument('--useLSTM', action='store_true')
+    parser.add_argument('--upsampleSeq', action='store_true')
 
     args = parser.parse_args(argv)
     if args.CPCLevel > 0:
@@ -370,6 +373,12 @@ def parse_args(argv):
 
 def main(argv):
     args = parse_args(argv)
+    if args.debug:
+        import ptvsd
+        ptvsd.enable_attach(('0.0.0.0', 7310))
+        print("Attach debugger now")
+        ptvsd.wait_for_attach()
+        args.nGPU = 1
     logs = {"epoch": [], "iter": [], "saveStep": args.save_step}
     loadCriterion = True if args.PER else False
 
@@ -568,11 +577,6 @@ def main(argv):
 
 
 if __name__ == "__main__":
-    # import ptvsd
-    # ptvsd.enable_attach(('0.0.0.0', 7310))
-    # print("Attach debugger now")
-    # ptvsd.wait_for_attach()
-    
     torch.multiprocessing.set_start_method('spawn')
     args = sys.argv[1:]
     main(args)
