@@ -18,22 +18,28 @@ if 1:
   parser.add_argument('--CTC', action='store_true')
   parser.add_argument('--get_encoded', action='store_true')
   parser.add_argument('--CTC_forbid_blank', action='store_true')
-  parser.add_argument('--numLayers', type=int, default=2)
+  parser.add_argument('--linearClassifier', action='store_true')
+  parser.add_argument('--convClassifier', action='store_true')
+  parser.add_argument('--useLSTM', action='store_true')
   parser.add_argument('--CPCLevel', type=int, default=0, help="")
   args, _ = parser.parse_known_args()
   checkpoint_dir = os.path.dirname(args.load)
   checkpoint_no = args.load.split('_')[-1][:-3]
-  eval_ctc = ""
+  desc = ""
   if args.CTC:
-    eval_ctc += "_ctc"
+    desc += "_ctc"
   if args.CTC_forbid_blank:
-    eval_ctc += "_noblank"
+    desc += "_noblank"
   if args.get_encoded:
-    eval_ctc += "_onenc"
-  if args.numLayers:
-    eval_ctc += f"_{args.numLayers}layers"
+    desc += "_onenc"
+  if args.useLSTM:
+    desc += "_lstm"
+  if args.convClassifier:
+    desc += "_conv"
+  elif not args.linearClassifier:
+    desc += "_mlp"
   if args.CPCLevel > 0:
-    eval_ctc += f"_level{args.CPCLevel}"
+    desc += "_onHead2"
   print(f"{checkpoint_dir}/linevalBuckeye{eval_ctc}_{checkpoint_no}")
 END
 )"

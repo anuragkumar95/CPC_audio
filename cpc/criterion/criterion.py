@@ -475,10 +475,6 @@ class CTCPhoneCriterion(BaseCriterion):
         avgPER = 0.
         if computeAccuracy:
             predictedPhones = predictions.max(2)[1].detach().cpu()
-            numSegments = torch.nonzero(torch.diff(predictedPhones[0, :]), as_tuple=True)[0]
-            # if random.random() < 0.005:
-            #     print("Predicted phones: ", predictedPhones[0, :int(numSegments[0].item())])
-            #     print("Expected phones: ", label[0, :sizeLabels[0]])
             predictedPhones, sizePredictions = collapseLabelChain(predictedPhones)
             for b in range(B):
                 predictedPhone = predictedPhones[b, :sizePredictions[b]]

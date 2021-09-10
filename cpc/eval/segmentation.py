@@ -85,7 +85,7 @@ def evalPhoneSegmentation(featureMaker, criterion, boundaryDetector, dataLoader,
         with torch.no_grad():
             batchData, labelData = fulldata
             label = labelData[labelKey]
-            cFeature, encodedData, _ = featureMaker(batchData, None)
+            cFeature, encodedData, _ = featureMaker(batchData, label)
             if wordSegmentation:
                 cFeature = cFeature[1]
                 encodedData = cFeature['encodedData']
