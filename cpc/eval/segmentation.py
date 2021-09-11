@@ -33,6 +33,9 @@ def getCriterion(args, downsampling, nSpeakers):
                                                     args.hiddenGar,
                                                     args.hiddenEncoder,
                                                     args.negativeSamplingExt,
+                                                    negativeSamplingExt2=args.negativeSamplingExt2,
+                                                    nPredicts2=args.nPredicts2,
+                                                    nMatched2=args.CPCCTCNumMatched2,
                                                     simMeasure=args.simMeasure,
                                                     allowed_skips_beg=args.CPCCTCSkipBeg,
                                                     allowed_skips_end=args.CPCCTCSkipEnd,
@@ -93,7 +96,7 @@ def evalPhoneSegmentation(featureMaker, criterion, boundaryDetector, dataLoader,
                 seqLens = cFeature['seqLens'] - 1
                 segmentLensBatch = cFeature['segmentLens'].cpu()
                 cFeature = cFeature['states']
-                cFeature = criterion.module.wPredictions[1](cFeature[:, :-1, :]).squeeze()
+                cFeature = criterion.module.wPredictions[1].predictors[0](cFeature[:, :-criterion.module.nMatched[1], :]).squeeze()
                 features = (cFeature[:, :-1, :], encodedData[:, 1:, :])
             else:
                 cFeature = cFeature[0]
@@ -160,11 +163,10 @@ def run(featureMaker,
         dataLoader,
         pathCheckpoint,
         onEncodings,
-        labelKey="speaker",
         wordSegmentation=False):
     print("%d batches" % len(dataLoader))
     logs = evalPhoneSegmentation(featureMaker, criterion, boundaryDetector, dataLoader, 
-                                 labelKey, onEncodings, wordSegmentation=wordSegmentation)
+                                 onEncodings, wordSegmentation=wordSegmentation)
     utils.show_logs("Results", logs)
     for key, value in dict(logs).items():
         if isinstance(value, np.ndarray):
@@ -280,7 +282,6 @@ def main(argv):
 
     criterion = loadCriterion(args.load[0], downsampling, len(speakers))
     criterion = torch.nn.DataParallel(criterion, device_ids=range(args.nGPU)).cuda()
-    # criterion = None
 
     # Dataset
     if args.debug:

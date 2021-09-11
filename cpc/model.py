@@ -247,7 +247,8 @@ class CPCAR(nn.Module):
 
         for l in range(1, self.numLevels):
             if self.smartPooling:
-                minLengthSeq = max(1, int(round(2* self.minLengthSeqMinusOne * self.segmentationThreshold**l))) + 1
+                # minLengthSeq = max(1, int(round(2* self.minLengthSeqMinusOne * self.segmentationThreshold**l))) + 1
+                minLengthSeq = self.minLengthSeqMinusOne + 1
                 if self.segmentationType == 'groundTruth':
                     assert label is not None, "To use ground truth segmentation labels must be provided"
                     diffs = torch.diff(label, dim=1)
@@ -257,6 +258,7 @@ class CPCAR(nn.Module):
                     seqEndIdx = torch.arange(0, x.size(0)*x.size(1) + 1, x.size(1), device=x.device)
                     boundaries = torch.unique(torch.cat((boundaries, seqEndIdx)), sorted=True)
                 elif self.segmentationType == 'jch':
+                    raise NotImplementedError
                     boundaries = jchBoundaryDetector((x[:, :-1, :], x[:, 1:, :]), self.segmentationThreshold**l, minLengthSeq, self.stepReduction)                                    
                 elif self.segmentationType == 'kreuk':
                     boundaries = kreukBoundaryDetector((x[:, :-1, :], x[:, 1:, :]), self.segmentationThreshold, torch.ones(x.size(0), dtype=torch.int64, device=x.device) * x.size(1), minLengthSeq)

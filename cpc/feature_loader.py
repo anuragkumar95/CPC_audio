@@ -174,7 +174,7 @@ def getAR(args):
                       segmentationThreshold=args.segmentationThreshold, 
                       smartPooling=args.smartPooling,
                       stepReduction=args.stepReduction,
-                      minLengthSeqMinusOne=args.CPCCTCNumMatched,
+                      minLengthSeqMinusOne=args.CPCCTCNumMatched2,
                       segmentationType=args.segmentationType,
                       NoARonRegHead=args.NoARonRegHead)
     return arNet
