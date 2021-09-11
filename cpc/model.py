@@ -252,7 +252,7 @@ class CPCAR(nn.Module):
                 if self.segmentationType == 'groundTruth':
                     assert label is not None, "To use ground truth segmentation labels must be provided"
                     diffs = torch.diff(label, dim=1)
-                    phoneChanges = torch.cat((torch.ones((label.shape[0], 1)).cuda(), diffs), dim=1)
+                    phoneChanges = torch.cat((torch.ones((label.shape[0], 1)).to(x.device), diffs), dim=1)
                     boundaries = torch.nonzero(phoneChanges.contiguous().view(-1), as_tuple=True)[0]
                     # Ensure that minibatch boundaries are preserved
                     seqEndIdx = torch.arange(0, x.size(0)*x.size(1) + 1, x.size(1), device=x.device)

@@ -8,6 +8,7 @@ import torch.nn.functional as F
 from .custom_layers import EqualizedLinear, EqualizedConv1d
 from cpc.criterion.seq_alignment import collapseLabelChain, getSeqPER
 import random
+import math
 
 class Identity(nn.Module):
 
@@ -418,9 +419,9 @@ class CTCPhoneCriterion(BaseCriterion):
                 nn.ReLU(),
                 nn.Linear(dimEncoder * 2*d, nPhones + 1),
             )
-        if upsample:
-            self.upsampleLayer = torch.nn.ConvTranspose1d(nPhones + 1, nPhones + 1, kernel_size=1, 
-                                                          stride=3)
+        # if upsample:
+            # self.upsampleLayer = torch.nn.ConvTranspose1d(nPhones + 1, nPhones + 1, kernel_size=1, 
+                                                        #   stride=3)
         if useLSTM:
             self.lstm = torch.nn.LSTM(dimEncoder, dimEncoder, num_layers=1, batch_first=True, bidirectional=True)
         self.lossCriterion = nn.CTCLoss(blank=nPhones, zero_infinity=True)
@@ -466,11 +467,6 @@ class CTCPhoneCriterion(BaseCriterion):
 
         features = otherEncoded if self.onEncoder else cFeature
         predictions = self.getPrediction(features)
-        if self.upsample:
-            predictions = predictions.permute(0, 2, 1)    
-            predictions = self.upsampleLayer(predictions)
-            predictions = predictions.permute(0, 2, 1) 
-            targetSizePred = (targetSizePred - 1) * 3 + 1
         if self.forbid_blank:
             predictions += (
                 -1e4 * 
@@ -478,15 +474,20 @@ class CTCPhoneCriterion(BaseCriterion):
                 ).float().view(1, 1, self.BLANK_LABEL+1))
         predictions = torch.nn.functional.log_softmax(predictions, dim=2)
         label = label.to(predictions.device)
-        label, sizeLabels = collapseLabelChain(label)   
+        label, sizeLabels = collapseLabelChain(label)
+        if self.upsample:
+            tooShortBatchIdx = torch.where(targetSizePred < sizeLabels)[0]
+            if len(tooShortBatchIdx) > 0:
+                expandBy = torch.ceil(torch.max(sizeLabels[tooShortBatchIdx] / targetSizePred[tooShortBatchIdx])).int()
+                predictions = predictions.repeat_interleave(expandBy, dim=1)
+                targetSizePred *= expandBy
         loss = self.lossCriterion(predictions.permute(1, 0, 2), label,
                                   targetSizePred, sizeLabels).view(1, -1)
         avgPER = 0.
         if computeAccuracy:
-            predictedPhones = predictions.max(2)[1].detach().cpu()
-            predictedPhones, sizePredictions = collapseLabelChain(predictedPhones)
             for b in range(B):
-                predictedPhone = predictedPhones[b, :sizePredictions[b]]
+                predictedPhones = predictions[b].max(1)[1].detach().cpu()
+                predictedPhone, sizePredictions = collapseLabelChain(torch.unsqueeze(predictedPhones[:targetSizePred[b]], dim=0))
                 predictedPhone = predictedPhone[predictedPhone != self.BLANK_LABEL]
                 avgPER += getSeqPER((predictedPhone, label[b, :sizeLabels[b]].cpu()))
             avgPER /= B
