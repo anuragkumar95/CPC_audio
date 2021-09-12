@@ -176,7 +176,8 @@ def getAR(args):
                       stepReduction=args.stepReduction,
                       minLengthSeqMinusOne=args.CPCCTCNumMatched2,
                       segmentationType=args.segmentationType,
-                      NoARonRegHead=args.NoARonRegHead)
+                      NoARonRegHead=args.NoARonRegHead,
+                      segmentOnContext=False)
     return arNet
 
 

@@ -174,7 +174,8 @@ class CPCAR(nn.Module):
                  mode="GRU",
                  reverse=False,
                  segmentationType='kreuk',
-                 NoARonRegHead=False):
+                 NoARonRegHead=False,
+                 segmentOnContext=False):
 
         super(CPCAR, self).__init__()
         self.RESIDUAL_STD = 0.1
@@ -208,7 +209,8 @@ class CPCAR(nn.Module):
         self.stepReduction = stepReduction
         self.minLengthSeqMinusOne = minLengthSeqMinusOne
         self.segmentationType = segmentationType
-        self.NoARonRegHead = NoARonRegHead
+        self.NoARonRegHead = NoARonRegHead  
+        self.segmentOnContext = segmentOnContext
 
     def getDimOutput(self):
         return self.heads[0].hidden_size
@@ -249,6 +251,7 @@ class CPCAR(nn.Module):
             if self.smartPooling:
                 # minLengthSeq = max(1, int(round(2* self.minLengthSeqMinusOne * self.segmentationThreshold**l))) + 1
                 minLengthSeq = self.minLengthSeqMinusOne + 1
+                highLvlFeatures = o if self.segmentOnContext else x
                 if self.segmentationType == 'groundTruth':
                     assert label is not None, "To use ground truth segmentation labels must be provided"
                     diffs = torch.diff(label, dim=1)
@@ -259,29 +262,34 @@ class CPCAR(nn.Module):
                     boundaries = torch.unique(torch.cat((boundaries, seqEndIdx)), sorted=True)
                 elif self.segmentationType == 'jch':
                     raise NotImplementedError
-                    boundaries = jchBoundaryDetector((x[:, :-1, :], x[:, 1:, :]), self.segmentationThreshold**l, minLengthSeq, self.stepReduction)                                    
+                    boundaries = jchBoundaryDetector((highLvlFeatures[:, :-1, :], 
+                                                      highLvlFeatures[:, 1:, :]), 
+                                                      self.segmentationThreshold**l, minLengthSeq, self.stepReduction)                                    
                 elif self.segmentationType == 'kreuk':
-                    boundaries = kreukBoundaryDetector((x[:, :-1, :], x[:, 1:, :]), self.segmentationThreshold, torch.ones(x.size(0), dtype=torch.int64, device=x.device) * x.size(1), minLengthSeq)
+                    boundaries = kreukBoundaryDetector((highLvlFeatures[:, :-1, :], 
+                                                        highLvlFeatures[:, 1:, :]), 
+                                                        self.segmentationThreshold, torch.ones(x.size(0), 
+                                                        dtype=torch.int64, device=x.device) * x.size(1), minLengthSeq)
                 elif self.segmentationType == 'jhu':
                     raise NotImplementedError
-                    xPadded, compressedMatrices, compressedLens =  jhuBoundaryDetector(x, self.segmentationThreshold, minLengthSeq)
+                    xPadded, compressedMatrices, compressedLens =  jhuBoundaryDetector(highLvlFeatures, self.segmentationThreshold, minLengthSeq)
                     packedCompressedX = torch.nn.utils.rnn.pack_padded_sequence(xPadded, compressedLens, batch_first=True, enforce_sorted=False)
                 else:
                     raise NotImplementedError
                 if self.segmentationType in ['jch', 'kreuk'] or label is not None:
                     compressMatrices, compressedLens, segmentLens = getAverageSlices(boundaries, x.size(1), x.device, minLengthSeq)
                     packedCompressedX = compress_batch(
-                        x, compressMatrices, compressedLens, pack=True
+                        highLvlFeatures, compressMatrices, compressedLens, pack=True
                     )
                 assert compressMatrices.shape[0] == x.shape[0]
                 packedX, packedH = self.heads[l](packedCompressedX, self.hidden[l])
-                o = decompress_padded_batch(packedX, compressMatrices)
+                statesHighLvl = decompress_padded_batch(packedX, compressMatrices)
                 segments = decompress_padded_batch(packedCompressedX, compressMatrices)
                 if self.encodeSegments:
                     segments = self.segmentEncoder(segments)
                 outs.append({
                     'encodedData': segments,
-                    'states': o,
+                    'states': statesHighLvl,
                     'seqLens': compressedLens.cuda(),
                     'segmentLens': segmentLens
                 })
@@ -317,7 +325,7 @@ class NoAr(nn.Module):
     def __init__(self, *args):
         super(NoAr, self).__init__()
 
-    def forward(self, x):
+    def forward(self, x, label):
         return [x]
 
 

@@ -52,6 +52,7 @@ def set_default_cpc_config(parser):
     group.add_argument('--stepReduction', type=float, default=0.2)
     group.add_argument('--segmentationType', type=str, 
                        choices=['jch', 'kreuk', 'groundTruth'], default='jch')
+    group.add_argument('--segmentOnContext', action='store_true')
     group.add_argument('--encodeSegments', action='store_true')
 
     
