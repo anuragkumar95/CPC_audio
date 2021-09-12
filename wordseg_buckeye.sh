@@ -36,5 +36,4 @@ exec python -u cpc/eval/segmentation.py \
     --pathWords /pio/scratch/1/i325922/data/BUCKEYE/raw/converted_aligned_words.txt \
     --file_extension .wav \
     --pathCheckpoint $SAVE_DIR \
-    --nGPU 1 \
     2>&1 | tee -ai ${SAVE_DIR}/out.txt

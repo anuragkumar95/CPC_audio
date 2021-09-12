@@ -35,5 +35,4 @@ exec python -u cpc/eval/segmentation.py \
     --pathPhone /pio/scratch/1/i323106/data/BUCKEYE/converted_aligned_phones.txt \
     --file_extension .wav \
     --pathCheckpoint $SAVE_DIR \
-    --nGPU 1 \
     2>&1 | tee -ai ${SAVE_DIR}/out.txt
