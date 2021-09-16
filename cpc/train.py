@@ -5,33 +5,35 @@
 import argparse
 import json
 import os
-import numpy as np
-import torch
-import time
-from copy import deepcopy
 import random
-import psutil
 import sys
-import torchaudio
+import time
 import warnings
+from copy import deepcopy
+
+import numpy as np
+import psutil
+import torch
+import torchaudio
 
 import cpc.criterion as cr
 import cpc.criterion.soft_align as sa
+import cpc.feature_loader as fl
 import cpc.model as model
 import cpc.utils.misc as utils
-import cpc.feature_loader as fl
+
 try:
     from cpc.balance_sampler import get_balance_sampler
 except ModuleNotFoundError:
     warnings.warn("cpc.balance_sampler unavailable")
-from cpc.cpc_default_config import set_default_cpc_config
-from cpc.dataset import AudioBatchData, findAllSeqs, filterSeqs, parseSeqLabels, \
-                        PeakNorm
-from cpc.criterion.research import CPCBertCriterion  # , DeepEmbeddedClustering, \
-    # DeepClustering, CTCCLustering
-from cpc.distributed_training.distributed_mode import init_distributed_mode
-from cpc.data_augmentation import augmentation_factory
 from cpc.clustering.clustering import buildNewPhoneDict
+from cpc.cpc_default_config import set_default_cpc_config
+from cpc.criterion.research import \
+    CPCBertCriterion  # DeepClustering, CTCCLustering; , DeepEmbeddedClustering, \
+from cpc.data_augmentation import augmentation_factory
+from cpc.dataset import (AudioBatchData, PeakNorm, filterSeqs, findAllSeqs,
+                         parseSeqLabels)
+from cpc.distributed_training.distributed_mode import init_distributed_mode
 
 
 def getCriterion(args, downsampling, nSpeakers, nPhones):
@@ -465,23 +467,26 @@ def main(argv):
     print(f'CONFIG:\n{json.dumps(vars(args), indent=4, sort_keys=True)}')
     print('-' * 50)
 
-    seqNames, speakers = findAllSeqs(args.pathDB,
+    seqNames, speakers, seqLengths = findAllSeqs(args.pathDB,
                                      extension=args.file_extension,
                                      loadCache=not args.ignore_cache,
                                      cache_path=args.path_cache)
 
     print(f'Found files: {len(seqNames)} seqs, {len(speakers)} speakers')
     # Datasets
+
     if args.pathTrain is not None:
         seqTrain = filterSeqs(args.pathTrain, seqNames)
     else:
         seqTrain = seqNames
+        seqTrainLengths = seqLengths
 
     if args.pathVal is None:
         print('No validation data specified!')
         seqVal = []
     else:
         seqVal = filterSeqs(args.pathVal, seqNames)
+        seqValLengths = seqLengths[seqVal]
 
     if args.debug:
         seqTrain = seqTrain[-1000:]
@@ -537,9 +542,11 @@ def main(argv):
     print("")
     print(f'Loading audio data at {args.pathDB}')
     print("Loading the training dataset")
+    seqTrainLengths = [seqLengths[seq]for seq in seqTrain]
     trainDataset = AudioBatchData(args.pathDB,
                                   args.sizeWindow,
                                   seqTrain,
+                                  seqTrainLengths,
                                   phoneLabels,
                                   len(speakers),
                                   nProcessLoader=args.n_process_loader,
@@ -552,9 +559,11 @@ def main(argv):
 
     if seqVal:
         print("Loading the validation dataset")
+        seqValLengths = [seqLengths[seq]for seq in seqVal]
         valDataset = AudioBatchData(args.pathDB,
                                 args.sizeWindow,
                                 seqVal,
+                                seqValLengths,
                                 phoneLabels,
                                 len(speakers),
                                 nProcessLoader=args.n_process_loader)

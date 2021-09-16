@@ -2,21 +2,22 @@
 #
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
-import os
 import math
+import os
 import random
-import time
-import tqdm
-import torch
 import statistics
-from pathlib import Path
+import time
 from copy import deepcopy
-from torch.multiprocessing import Pool
-from torch.utils.data import Dataset, DataLoader
-from torch.utils.data.dataloader import _SingleProcessDataLoaderIter
-from torch.utils.data.sampler import Sampler, BatchSampler
+from pathlib import Path
 
+import torch
 import torchaudio
+import tqdm
+from torch.multiprocessing import Pool
+from torch.utils.data import DataLoader, Dataset
+from torch.utils.data.dataloader import _SingleProcessDataLoaderIter
+from torch.utils.data.sampler import BatchSampler, Sampler
+
 
 class AudioBatchData(Dataset):
 
@@ -24,6 +25,7 @@ class AudioBatchData(Dataset):
                  path,
                  sizeWindow,
                  seqNames,
+                 seqLengths,
                  phoneLabelsDict,
                  nSpeakers,
                  nProcessLoader=10,
@@ -54,6 +56,7 @@ class AudioBatchData(Dataset):
         self.dbPath = Path(path)
         self.sizeWindow = sizeWindow
         self.seqNames = [(s, self.dbPath / x) for s, x in seqNames]
+        self.seqLengths = seqLengths
         self.reload_pool = Pool(nProcessLoader)
         self.transform = transform
 
@@ -104,11 +107,10 @@ class AudioBatchData(Dataset):
         start_time = time.time()
 
         print("Checking length...")
-        allLength = self.reload_pool.map(extractLength, self.seqNames)
 
         self.packageIndex, self.totSize = [], 0
         start, packageSize = 0, 0
-        for index, length in tqdm.tqdm(enumerate(allLength)):
+        for index, length in tqdm.tqdm(enumerate(self.seqLength)):
             packageSize += length
             if packageSize > self.MAX_SIZE_LOADED:
                 self.packageIndex.append([start, index])
@@ -523,7 +525,7 @@ def findAllSeqs(dirName,
         cache_path = str(Path(dirName) / '_seqs_cache.txt')
     if loadCache:
         try:
-            outSequences, speakers = torch.load(cache_path)
+            outSequences, speakers, outLengths = torch.load(cache_path)
             print(f'Loaded from cache {cache_path} successfully')
             return outSequences, speakers
         except OSError as err:
@@ -535,6 +537,7 @@ def findAllSeqs(dirName,
     prefixSize = len(dirName)
     speakersTarget = {}
     outSequences = []
+    outLengths = {}
     for path_file in tqdm.tqdm(Path(dirName).glob(f'**/*{extension}')):
 
         path_str = str(path_file)
@@ -543,17 +546,19 @@ def findAllSeqs(dirName,
         if speakerStr not in speakersTarget:
             speakersTarget[speakerStr] = len(speakersTarget)
         speaker = speakersTarget[speakerStr]
-        outSequences.append((speaker, path_str[prefixSize:]))
+        sequence_key = (speaker, path_str[prefixSize:])
+        outSequences.append(sequence_key)
+        outLengths[sequence_key] = extractLength((speaker, path_file))
 
     outSpeakers = [None for x in speakersTarget]
     for key, index in speakersTarget.items():
         outSpeakers[index] = key
     try:
-        torch.save((outSequences, outSpeakers), cache_path)
+        torch.save((outSequences, outSpeakers, outLengths), cache_path)
         print(f'Saved cache file at {cache_path}')
     except OSError as err:
         print(f'Ran in an error while saving {cache_path}: {err}')
-    return outSequences, outSpeakers
+    return outSequences, outSpeakers, outLengths
 
 
 def parseSeqLabels(pathLabels):
