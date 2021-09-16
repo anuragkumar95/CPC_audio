@@ -479,14 +479,12 @@ def main(argv):
         seqTrain = filterSeqs(args.pathTrain, seqNames)
     else:
         seqTrain = seqNames
-        seqTrainLengths = seqLengths
 
     if args.pathVal is None:
         print('No validation data specified!')
         seqVal = []
     else:
         seqVal = filterSeqs(args.pathVal, seqNames)
-        seqValLengths = seqLengths[seqVal]
 
     if args.debug:
         seqTrain = seqTrain[-1000:]
@@ -542,7 +540,7 @@ def main(argv):
     print("")
     print(f'Loading audio data at {args.pathDB}')
     print("Loading the training dataset")
-    seqTrainLengths = [seqLengths[seq]for seq in seqTrain]
+    seqTrainLengths = [seqLengths[seq] for seq in seqTrain]
     trainDataset = AudioBatchData(args.pathDB,
                                   args.sizeWindow,
                                   seqTrain,
@@ -559,7 +557,7 @@ def main(argv):
 
     if seqVal:
         print("Loading the validation dataset")
-        seqValLengths = [seqLengths[seq]for seq in seqVal]
+        seqValLengths = [seqLengths[seq] for seq in seqVal]
         valDataset = AudioBatchData(args.pathDB,
                                 args.sizeWindow,
                                 seqVal,
