@@ -110,7 +110,7 @@ class AudioBatchData(Dataset):
 
         self.packageIndex, self.totSize = [], 0
         start, packageSize = 0, 0
-        for index, length in tqdm.tqdm(enumerate(self.seqLength)):
+        for index, length in tqdm.tqdm(enumerate(self.seqLengths)):
             packageSize += length
             if packageSize > self.MAX_SIZE_LOADED:
                 self.packageIndex.append([start, index])
@@ -527,7 +527,7 @@ def findAllSeqs(dirName,
         try:
             outSequences, speakers, outLengths = torch.load(cache_path)
             print(f'Loaded from cache {cache_path} successfully')
-            return outSequences, speakers
+            return outSequences, speakers, outLengths
         except OSError as err:
             print(f'Ran in an error while loading {cache_path}: {err}')
         print('Could not load cache, rebuilding')
