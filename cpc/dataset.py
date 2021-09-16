@@ -8,12 +8,12 @@ import random
 import statistics
 import time
 from copy import deepcopy
+from multiprocessing.dummy import Pool
 from pathlib import Path
 
 import torch
 import torchaudio
 import tqdm
-from torch.multiprocessing import Pool
 from torch.utils.data import DataLoader, Dataset
 from torch.utils.data.dataloader import _SingleProcessDataLoaderIter
 from torch.utils.data.sampler import BatchSampler, Sampler
@@ -522,7 +522,7 @@ def findAllSeqs(dirName,
 
     """
     if cache_path is None:
-        cache_path = str(Path(dirName) / '_seqs_cache.txt')
+        cache_path = str(Path(dirName) / '_seqs_cache_f.txt')
     if loadCache:
         try:
             outSequences, speakers, outLengths = torch.load(cache_path)

@@ -206,51 +206,59 @@ def trainStep(dataLoader,
               scheduler,
               clustering,
               loggingStep):
-
     cpcModel.train()
     cpcCriterion.train()
-
     start_time = time.perf_counter()
     tot_n_examples = 0
     n_examples = 0
     logs, lastlogs = {}, None
     iter = 0
+    timers = {}
+    timers["tot_load_time"] = 0
+    timers["tot_transfer_time"] = 0
+    timers["tot_feature_time"] = 0
+    timers["tot_criterion_time"] = 0
+    timers["tot_backward_time"] = 0
+    timers["tot_bookkeeping_time"] = 0
+    timers_bookkeep = {"_last_time": time.perf_counter()}
+    def measure_time(timer):
+        cur_time = time.perf_counter()
+        timers[timer] += cur_time - timers_bookkeep["_last_time"]
+        timers_bookkeep["_last_time"] = cur_time
+    tot_time_start = time.perf_counter()
     for step, full_data in enumerate(dataLoader):
+        measure_time("tot_load_time")
         sequence, label = [x.cuda(non_blocking=True) for x in full_data]
+        measure_time("tot_transfer_time")
         past, future = sequence[:, 0, ...], sequence[:, 1, ...]
-
         b = past.size(0)
         n_examples += b
         tot_n_examples += b
-
         combined = torch.cat([past, future], dim=0)
         label = torch.cat([label, label])
-
         c_feature, encoded_data, label = cpcModel(combined, label)
+        measure_time("tot_feature_time")
         c_feature = c_feature[:b, :, :]
         encoded_data = encoded_data[b:, :, :]
         label =label[:b]
-
         # Catch 'captured' with '*_'
         allLosses, allAcc, *_ = cpcCriterion(c_feature, encoded_data, label)
+        measure_time("tot_criterion_time")
         totLoss = allLosses.sum()
         totLoss.backward()
-
         if clustering is not None:
             lossCluster = clustering(c_feature, label)
             totLoss += lossCluster.sum()
-
         # Show grads ?
         optimizer.step()
         optimizer.zero_grad()
-
+        measure_time("tot_backward_time")
         if allLosses.nelement() > 0:
             if "locLoss_train" not in logs:
                 logs["locLoss_train"] = np.zeros(allLosses.size(1))
                 logs["locAcc_train"] = np.zeros(allLosses.size(1))
                 if clustering is not None:
                     logs["lossCluster_train"] = np.zeros(lossCluster.size(1))
-
             iter += 1
             logs["locLoss_train"] += (allLosses.mean(dim=0)).detach().cpu().numpy()
             logs["locAcc_train"] += (allAcc.mean(dim=0)).cpu().numpy()
@@ -262,21 +270,23 @@ def trainStep(dataLoader,
                 elapsed = new_time - start_time
                 print(f"Update {step + 1}; Examples processed {tot_n_examples}/{len(dataLoader.dataset)}, average batch size {n_examples/loggingStep}")
                 print(f"elapsed: {elapsed:.1f} s")
+                print(timers, time.perf_counter() - tot_time_start)
+                tot_time_start = time.perf_counter()
+                for k in timers:
+                    timers[k] = 0.0
                 print(
                     f"{1000.0 * elapsed / loggingStep:.1f} ms per batch, {1000.0 * elapsed / n_examples:.1f} ms / example")
                 locLogs = utils.update_logs(logs, loggingStep, lastlogs)
                 lastlogs = deepcopy(logs)
                 utils.show_logs("Training loss", locLogs)
                 start_time, n_examples = new_time, 0
-
+        measure_time("tot_bookkeeping_time")
     if scheduler is not None:
         scheduler.step()
-
     logs = utils.update_logs(logs, iter)
     logs["iter"] = iter
     utils.show_logs("Average training loss on epoch", logs)
     return logs
-
 
 def valStep(dataLoader,
             cpcModel,
