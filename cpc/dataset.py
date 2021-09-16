@@ -8,12 +8,12 @@ import random
 import statistics
 import time
 from copy import deepcopy
-from multiprocessing.dummy import Pool
 from pathlib import Path
 
 import torch
 import torchaudio
 import tqdm
+from torch.multiprocessing import Pool
 from torch.utils.data import DataLoader, Dataset
 from torch.utils.data.dataloader import _SingleProcessDataLoaderIter
 from torch.utils.data.sampler import BatchSampler, Sampler
