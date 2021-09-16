@@ -316,6 +316,7 @@ def run(trainDataset,
     for epoch in range(startEpoch, nEpoch):
 
         print(f"Starting epoch {epoch}")
+        sys.stdout.flush()
         utils.cpu_stats()
 
         trainLoader = trainDataset.getDataLoader(batchSize, samplingMode,
@@ -505,7 +506,9 @@ def main(args):
                                     phoneLabels,
                                     len(speakers),
                                     nProcessLoader=args.n_process_loader,
-                                    MAX_SIZE_LOADED=args.max_size_loaded)
+                                    MAX_SIZE_LOADED=args.max_size_loaded,
+                                    keepSameSeedForDSshuffle=args.fixedDSshuffleSeed,
+                                    newTorchaudio=args.newTorchaudio)
         print("Training dataset loaded")
         print("")
 
@@ -515,7 +518,9 @@ def main(args):
                                     seqVal,
                                     phoneLabels,
                                     len(speakers),
-                                    nProcessLoader=args.n_process_loader)
+                                    nProcessLoader=args.n_process_loader,
+                                    keepSameSeedForDSshuffle=args.fixedDSshuffleSeed,
+                                    newTorchaudio=args.newTorchaudio)
         print("Validation dataset loaded")
         print("")
     else:
@@ -538,7 +543,9 @@ def main(args):
                                     seqCapture,
                                     phoneLabelsForCapture,
                                     len(speakers),
-                                    nProcessLoader=args.n_process_loader)
+                                    nProcessLoader=args.n_process_loader,
+                                    keepSameSeedForDSshuffle=True,
+                                    newTorchaudio=args.newTorchaudio)
         print("Capture dataset loaded")
         print("")
 
@@ -713,16 +720,20 @@ def main(args):
 
                 return speaker_criterion, speaker_optimizer
 
-        linsep_db_train = AudioBatchData(args.pathDB, args.sizeWindow, seqTrain,
-                                phoneLabelsData, len(speakers))
-        linsep_db_val = AudioBatchData(args.pathDB, args.sizeWindow, seqVal,
-                                    phoneLabelsData, len(speakers))
+        # loading this second time kills RAM
+        # linsep_db_train = AudioBatchData(args.pathDB, args.sizeWindow, seqTrain,
+        #                         phoneLabelsData, len(speakers), keepSameSeedForDSshuffle=args.fixedDSshuffleSeed,
+        #                         newTorchaudio=args.newTorchaudio)
+        # linsep_db_val = AudioBatchData(args.pathDB, args.sizeWindow, seqVal,
+        #                             phoneLabelsData, len(speakers), keepSameSeedForDSshuffle=args.fixedDSshuffleSeed,
+        #                             newTorchaudio=args.newTorchaudio)
 
-        linsep_train_loader = linsep_db_train.getDataLoader(linsep_batch_size, "uniform", True,
+        linsep_train_loader = trainDataset.getDataLoader(linsep_batch_size, "uniform", True,
                                         numWorkers=0)
-
-        linsep_val_loader = linsep_db_val.getDataLoader(linsep_batch_size, 'sequential', False,
+        print("linsep_train_loader ready")
+        linsep_val_loader = valDataset.getDataLoader(linsep_batch_size, 'sequential', False,
                                     numWorkers=0)
+        print("linsep_val_loader ready")
 
         def runLinsepClassificationTraining(numOfEpoch, cpcMdl, cpcStateEpoch):
             log_path_for_epoch = os.path.join(args.linsep_logs_dir, str(numOfEpoch))
@@ -841,6 +852,11 @@ def parseArgs(argv):
     group_db.add_argument('--pathVal', type=str, default=None,
                           help='Path to a .txt file containing the list of the '
                           'validation sequences.')
+    group_db.add_argument('--fixedDSshuffleSeed', action='store_true',
+                          help="if set, will always shuffle train & val DS same way (with same seed); "
+                          "if not set, will use randomized seed used for other stuff also for this")
+    group_db.add_argument('--newTorchaudio', action='store_true',
+                          help="if set, use newer audio data loading API compatible with newer torchaudio (0.8.1+)")
     # stuff below for capturing data
     group_db.add_argument('--onlyCapture', action='store_true',
                           help='Only capture data from learned model for one epoch, ignore training; '

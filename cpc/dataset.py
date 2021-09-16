@@ -27,7 +27,9 @@ class AudioBatchData(Dataset):
                  phoneLabelsDict,
                  nSpeakers,
                  nProcessLoader=50,
-                 MAX_SIZE_LOADED=4000000000):
+                 MAX_SIZE_LOADED=4000000000,
+                 keepSameSeedForDSshuffle=False,
+                 newTorchaudio=False):
         """
         Args:
             - path (string): path to the training dataset
@@ -45,6 +47,8 @@ class AudioBatchData(Dataset):
            - MAX_SIZE_LOADED (int): target maximal size of the floating array
                                     containing all loaded data.
         """
+        self.keepSameSeedForDSshuffle = keepSameSeedForDSshuffle
+        self.newTorchaudio = newTorchaudio
         self.MAX_SIZE_LOADED = MAX_SIZE_LOADED
         self.nProcessLoader = nProcessLoader
         self.dbPath = Path(path)
@@ -91,15 +95,24 @@ class AudioBatchData(Dataset):
             del self.seqLabel
 
     def prepare(self):
-        randomstate = random.getstate()
-        random.seed(767543)  # set seed only for batching so that it is random but always same for same dataset
-                             # so that capturing captures data for same audio across runs if same dataset provided
+        if self.keepSameSeedForDSshuffle:
+            print("--> setting same seed for DS seqNames shuffling")
+            randomstate = random.getstate()
+            random.seed(767543)  # set seed only for batching so that it is random but always same for same dataset
+                                 # so that capturing captures data for same audio across runs if same dataset provided
+        else:
+            print("--> using random seed for DS seqNames shuffling")
         random.shuffle(self.seqNames)
-        random.setstate(randomstate)  # restore random state so that other stuff changes with seed in args
+        if self.keepSameSeedForDSshuffle:
+            random.setstate(randomstate)  # restore random state so that other stuff changes with seed in args
         start_time = time.time()
 
         print("Checking length...")
-        allLength = self.reload_pool.map(extractLength, self.seqNames)
+        if self.newTorchaudio:
+            mapFun = extractLengthNewTorchaudio
+        else:
+            mapFun = extractLength
+        allLength = self.reload_pool.map(mapFun, self.seqNames)
 
         self.packageIndex, self.totSize = [], 0
         start, packageSize = 0, 0
@@ -423,10 +436,16 @@ class SameSpeakerSampler(Sampler):
         return iter(self.batches)
 
 
-def extractLength(couple):
+def extractLength(couple):  # for old torchaudio
     speaker, locPath = couple
     info = torchaudio.info(str(locPath))[0]
     return info.length
+
+def extractLengthNewTorchaudio(couple):  # linux machines, new torchaudio 0.8.1+ for CUDA around >= 11
+    speaker, locPath = couple
+    # https://pytorch.org/audio/stable/backend.html#torchaudio.backend.common.AudioMetaData
+    info = torchaudio.info(str(locPath))
+    return info.num_frames * info.num_channels  # (default 'sox' backend)
 
 
 def findAllSeqs(dirName,
