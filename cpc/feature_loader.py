@@ -116,12 +116,12 @@ def getCheckpointData(pathDir):
     except Exception as e:
         print(f"WARNING: failed to load log: {e}")
 
-    
+
     # args_json = os.path.join(pathDir, 'checkpoint_args.json')
     # try:
     #     with open(args_json, 'rb') as file:
     #         args = json.load(file)
-    #     args = argparse.Namespace(**args)    
+    #     args = argparse.Namespace(**args)
     # except Exception as e:
     #     print("WARNING: failed to load {args_json}: {e}")
     #     args = argparse.Namespace()
@@ -280,15 +280,27 @@ def buildFeature(featureMaker, seqPath, strict=False,
     sizeSeq = seq.size(1)
     start = 0
     out = []
+    MIN_PAD = 256
+    padded_flag = False
     while start < sizeSeq:
         if strict and start + maxSizeSeq > sizeSeq:
             break
         end = min(sizeSeq, start + maxSizeSeq)
         subseq = (seq[:, start:end]).view(1, 1, -1).cuda(device=0)
         with torch.no_grad():
+            if subseq.size(2) < MIN_PAD:
+                padded_flag = True
+                size_before_padded = subseq.size(2)
+                diff = MIN_PAD - size_before_padded
+                padder = torch.nn.ConstantPad1d((0, diff), 0)
+                subseq = padder(subseq)
             features = featureMaker((subseq, None))
             if seqNorm:
                 features = seqNormalization(features)
+            if padded_flag:
+                subseq = subseq[..., :size_before_padded]
+
+
         out.append(features.detach().cpu())
         start += maxSizeSeq
 
@@ -326,13 +338,13 @@ def buildFeature_batch(featureMaker, seqPath, strict=False,
         device = 'cpu'
     seq = torchaudio.load(seqPath)[0]
     sizeSeq = seq.size(1)
-    
+
     # Compute number of batches
     n_chunks = sizeSeq//maxSizeSeq
     n_batches = n_chunks//batch_size
     if n_chunks % batch_size != 0:
         n_batches += 1
-    
+
     out = []
     # Treat each batch
     for batch_idx in range(n_batches):
@@ -347,7 +359,7 @@ def buildFeature_batch(featureMaker, seqPath, strict=False,
                 if seqNorm:
                     features = seqNormalization(features)
                 out.append(features.detach().cpu())
-        
+
     # Remaining frames
     if sizeSeq % maxSizeSeq >= featureMaker.getDownsamplingFactor():
         remainders = sizeSeq % maxSizeSeq
@@ -366,6 +378,6 @@ def buildFeature_batch(featureMaker, seqPath, strict=False,
                 if seqNorm:
                     features = seqNormalization(features)
             out.append(features.detach().cpu())
-            
+
     out = torch.cat(out, dim=1)
     return out
