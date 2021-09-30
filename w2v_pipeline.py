@@ -1,7 +1,10 @@
 import os
 import pathlib
+import glob
+import tqdm
 from argparse import ArgumentParser
 from collections import defaultdict
+from itertools import groupby
 
 from progressbar.bar import DefaultFdMixin
 import torch
@@ -144,17 +147,25 @@ def vectorize(data, path, vector_size=100, window=5, n_epochs=30, train=True):
 def parseArgs():
     parser = ArgumentParser()
 
-    parser.add_argument('--word_encodings', type=pathlib.Path,
-                        help='Path to word encodings')
+    parser.add_argument('--pathEncodings', type=str,
+                        help='Path to the directory containing word encodings')
+    parser.add_argument('--pathWordLabels', type=str,
+                        help='Path to a .txt file containing the word labels in order as they '
+                        'appear in the audio files')
+    parser.add_argument('--pathOut', type=str,
+                        help='Path to the directory containing the models, '
+                        'if not specified/empty then it will be computed')
+    parser.add_argument('--encExtension', type=str, default='.txt',
+                        help='Extension of the files containing word encodings')
     parser.add_argument('--word2vec_size', type=int, default=100,
                         help='Size of the word2vec vectors, 100 by default')
-    parser.add_argument('--pathOut', type=pathlib.Path, default="/pio/scratch/1/i325922/data/buckeye_word_encs/true_text/fixed_nonwords_list_split",
-                        help='Path to the models, if not specified/empty then it will be computed')
-    parser.add_argument('--K', type=int, default=15000,
+    parser.add_argument('--K', type=int, default=10000,
                         help='Number of clusters in KMeans')
     parser.add_argument('--nEpoch', type=int, default=30,
                        help='Number of epoch to run word2vec for')
     parser.add_argument('--windowSize', type=int, default=5,
+                       help='Maximum distance between current and predicted word within a sentence in word2vec')
+    parser.add_argument('--wordWeights', action='store_true',
                        help='Maximum distance between current and predicted word within a sentence in word2vec')
     parser.add_argument('--seed', type=int, default=290956,
                         help='Random seed')
@@ -162,32 +173,64 @@ def parseArgs():
 
 def run(args):
 
-    # THERE ARE 354753 LABELLED WORDS IN THE DATASET
-    # THERE ARE 13129 UNIQUE RAW WORD LABELS
-    # AFTER FIXING, THERE ARE 10091 WORD LABELS
-
     # TRUE TEXT 
-    df = pd.read_csv('word_df_fixed_nonwords.csv')
+    # df = pd.read_csv(args.pathWordDF)
+    # trueWords = df['label']
+    # trueWords = list(trueWords.values)
 
-    wordLabels = []
-    all_words = df['word'].to_list()
-    for i in range(len(all_words) // 15):
-        sentence = all_words[i * 15 : (i+1) * 15]
-        wordLabels.append(sentence)
+
+    # LOADING ENCODINGS
+    encFiles = glob.glob(os.path.join(args.pathEncodings, '*' + args.encExtension))
+    encodings = []
+    if args.encExtension == ".txt":
+        for encfile in tqdm.tqdm(encFiles):
+            with open(encfile, 'r') as f:
+                lines = f.readlines()
+            for line in lines:
+                data = line.split()
+                encodings.append([float(x) for x in data])
+        wordEncs = torch.tensor(encodings)
+    elif args.encExtension == ".pt":
+        for encfile in tqdm.tqdm(encFiles):
+             encodings.append(torch.tensor(torch.load(encfile)))
+        wordEncs = torch.cat(encodings)
+    else:
+        raise NotImplementedError
 
     # KMEANS
-    # word_encs = torch.randn(40000, 256)
-    # word_weights = None
-    # start_time = time()
-    # kmeans_path = os.path.join(args.pathOut, "kmeans")
-    # wordLabels = cluster_kmeans(word_encs, word_weights, kmeans_path, n_clusters=args.K, cosine=True)
-    # print(f"Finished clustering in {time() - start_time} seconds")
-    # wordLabels = list(map(hex, wordLabels))
+    with open(args.pathWordLabels, 'r') as f:
+        lines = f.readlines()
+    allLabels = []
+    for line in lines:
+        data = line.split()
+        recordingLabels = [int(x) for x in data[1:]]
+        allLabels += recordingLabels
+    uniqueConsecutiveWords = np.array([x[0] for x in groupby(allLabels)])
+    unique, counts = np.unique(uniqueConsecutiveWords, return_counts=True)
+    weightsDict = dict(zip(unique, counts / uniqueConsecutiveWords.shape[0]))
+
+    if args.wordWeights:
+        weights = np.vectorize(weightsDict.get)(uniqueConsecutiveWords)
+    else:
+        weights = None
+    start_time = time()
+    kmeans_path = os.path.join(args.pathOut, f"kmeans_K_{args.K}_weighted_{args.wordWeights}")
+    wordLabels = cluster_kmeans(wordEncs, weights, kmeans_path, n_clusters=args.K, cosine=True)
+    print(f"Finished clustering in {time() - start_time} seconds")
+    hexedWordLabels = list(map(hex, wordLabels))
+
+    n_words_in_sentence = 15
+    splitHexLabels = []
+    for i in range(len(hexedWordLabels) // n_words_in_sentence):
+        sentence = hexedWordLabels[i * n_words_in_sentence : (i+1) * n_words_in_sentence]
+        splitHexLabels.append(sentence)
+    splitHexLabels.append(hexedWordLabels[(i+1) * n_words_in_sentence:])
+    print(f"Original quantized corpus of length {len(hexedWordLabels)} successfully split into {(len(hexedWordLabels) // n_words_in_sentence) + 1} sentences!")
 
     # W2V
     word_time = time()
-    word2vec_path = os.path.join(args.pathOut, f"word2vec_window_{args.windowSize}_nepoch_{args.nEpoch}_vectorsize_{args.word2vec_size}")
-    encodings, weights, reconstruct, build_map = vectorize(wordLabels, word2vec_path, args.word2vec_size, 
+    word2vec_path = os.path.join(args.pathOut, f"word2vec_window_{args.windowSize}_nepoch_{args.nEpoch}_vectorsize_{args.word2vec_size}_K{args.K}_weighted_{args.wordWeights}")
+    encodings, weights, reconstruct, build_map = vectorize(splitHexLabels, word2vec_path, args.word2vec_size, 
                                                             window=args.windowSize, n_epochs=args.nEpoch)
     # for w in range(5, 20):
     #     word2vec_path = os.path.join(args.pathOut, f"word2vec_window_{w}")
