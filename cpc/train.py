@@ -139,12 +139,12 @@ def trainStep(dataLoader,
             logs[f"kreukAcc_train"] += (allAccAux[0].mean(dim=0)).cpu().numpy()
             totLoss += allLossesAux[0].mean()
         if predictClusterIdCriterion is not None:
-            allLossesClusterId, allLossesClusterId = predictClusterIdCriterion(c_feature[0], encoded_data, label, None)
+            allLossesClusterId, allAccClusterId = predictClusterIdCriterion(c_feature[0], encoded_data, label, None)
             if f"ClusterIdLoss_train" not in logs:
                 logs[f"ClusterIdLoss_train"] = np.zeros(allLossesClusterId.size(1))
-                logs[f"ClusterIdAcc_train"] = np.zeros(allLossesClusterId.size(1))
+                logs[f"ClusterIdAcc_train"] = np.zeros(allAccClusterId.size(1))
             logs[f"ClusterIdLoss_train"] += np.asarray([allLossesClusterId.mean().item()])
-            logs[f"ClusterIdAcc_train"] += np.asarray([allLossesClusterId.mean().item()])
+            logs[f"ClusterIdAcc_train"] += np.asarray([allAccClusterId.mean().item()])
             totLoss += allLossesClusterId.mean()
         totLoss.backward()
 
