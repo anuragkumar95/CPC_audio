@@ -352,15 +352,15 @@ class PhoneCriterion(BaseCriterion):
         self.useConvClassifier = useConvClassifier
         d = 2 if useLSTM else 1
         if linear:
-            self.PhoneCriterionClassifier = nn.Linear(dimEncoder * d, nPhones + 1)
+            self.PhoneCriterionClassifier = nn.Linear(dimEncoder * d, nPhones)
         elif useConvClassifier:
             self.PhoneCriterionClassifier = torch.nn.Conv1d(
-                dimEncoder * d, nPhones + 1, 8, stride=4)
+                dimEncoder * d, nPhones, 8, stride=4)
         else:
             self.PhoneCriterionClassifier = nn.Sequential(
                 nn.Linear(dimEncoder * d, dimEncoder * 2*d),
                 nn.ReLU(),
-                nn.Linear(dimEncoder * 2*d, nPhones + 1),
+                nn.Linear(dimEncoder * 2*d, nPhones),
             )
         if useLSTM:
             self.lstm = torch.nn.LSTM(dimEncoder, dimEncoder, num_layers=1, batch_first=True, bidirectional=True)

@@ -393,8 +393,13 @@ class CPCUnsupersivedCriterion(BaseCriterion):
         outAcc = outAcc.squeeze(-1).float().mean(0, keepdim=True)
         # just simulate a per-prediction loss
         outLossesD = outLosses.detach()
+        # if level == 0:
+        #     losses = losses.mean()
+        # else:
+        #     # losses = losses.sum() / batchSize
+        #     losses = losses.mean() + torch.sqrt(torch.sum(windowSizes))
+        # losses = losses / outLossesD.sum() * outLossesD
         losses = losses.mean() / outLossesD.sum() * outLossesD
-
         return losses, outAcc, torch.split(aligns, windowSizes.tolist()) if self.smartPooling else aligns, predictions, paddedLogScores
         
     def forward(self, cFeatures, encodedData, label, captureOptions=None):

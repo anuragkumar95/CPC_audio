@@ -36,8 +36,7 @@ def getCriterion(args, dim_features, dim_inter, speakers):
                                           nPhones, args.get_encoded,
                                           useLSTM=args.useLSTM,
                                           useConvClassifier=args.convClassifier,
-                                          linear=args.linearClassifier,
-                                          upsample=args.upsampleSeq)
+                                          linear=args.linearClassifier)
         else:
             print(f"Running phone separability with CTC loss")
             criterion = cr.CTCPhoneCriterion(dim_features,

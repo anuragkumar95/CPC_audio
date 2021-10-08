@@ -72,7 +72,7 @@ def getCriterion(args, downsampling, nSpeakers, nPhones):
                                                         args.negativeSamplingExt,
                                                         simMeasure=args.simMeasure,
                                                         mode=args.cpc_mode,
-                                                        rnnMode=args.rnnMode,
+                                                        rnnMode=args.rnnModeRegHead,
                                                         dropout=args.dropout,
                                                         nSpeakers=nSpeakers,
                                                         speakerEmbedding=args.speakerEmbedding,
@@ -107,7 +107,9 @@ def trainStep(dataLoader,
               scheduler,
               loggingStep,
               headWeights,
-              PhoneLabels):
+              PhoneLabels,
+              auxCriterion,
+              predictClusterIdCriterion):
 
     cpcModel.train()
     cpcCriterion.train()
@@ -128,6 +130,22 @@ def trainStep(dataLoader,
         for i, loss in enumerate(allLosses):
             totLoss += headWeights[i] * loss.mean()
         totLoss = totLoss / len(allLosses)
+        if auxCriterion is not None:
+            allLossesAux, allAccAux, _ = auxCriterion([encoded_data], encoded_data, label, None)
+            if f"kreukLoss_train" not in logs:
+                logs[f"kreukLoss_train"] = np.zeros(allLossesAux[0].size(1))
+                logs[f"kreukAcc_train"] = np.zeros(allLossesAux[0].size(1))
+            logs[f"kreukLoss_train"] += (allLossesAux[0].mean(dim=0)).detach().cpu().numpy()
+            logs[f"kreukAcc_train"] += (allAccAux[0].mean(dim=0)).cpu().numpy()
+            totLoss += allLossesAux[0].mean()
+        if predictClusterIdCriterion is not None:
+            allLossesClusterId, allLossesClusterId = predictClusterIdCriterion(c_feature[0], encoded_data, label, None)
+            if f"ClusterIdLoss_train" not in logs:
+                logs[f"ClusterIdLoss_train"] = np.zeros(allLossesClusterId.size(1))
+                logs[f"ClusterIdAcc_train"] = np.zeros(allLossesClusterId.size(1))
+            logs[f"ClusterIdLoss_train"] += np.asarray([allLossesClusterId.mean().item()])
+            logs[f"ClusterIdAcc_train"] += np.asarray([allLossesClusterId.mean().item()])
+            totLoss += allLossesClusterId.mean()
         totLoss.backward()
 
         # Show grads ?
@@ -167,7 +185,9 @@ def trainStep(dataLoader,
 def valStep(dataLoader,
             cpcModel,
             cpcCriterion,
-            PhoneLabels):
+            PhoneLabels,
+            auxCriterion,
+            predictClusterIdCriterion):
 
     cpcCriterion.eval()
     cpcModel.eval()
@@ -314,7 +334,9 @@ def run(trainDataset,
         scheduler,
         logs,
         headWeights,
-        PhoneLabels):
+        PhoneLabels,
+        auxCriterion=None,
+        predictClusterIdCriterion=None):
 
     startEpoch = len(logs["epoch"])
     print(f"Running {nEpoch} epochs, now at {startEpoch}")
@@ -352,9 +374,9 @@ def run(trainDataset,
             (len(trainLoader), len(valLoader), batchSize))
 
         locLogsTrain = trainStep(trainLoader, cpcModel, cpcCriterion,
-                                optimizer, scheduler, logs["logging_step"], headWeights, PhoneLabels)
+                                optimizer, scheduler, logs["logging_step"], headWeights, PhoneLabels, auxCriterion, predictClusterIdCriterion)
 
-        locLogsVal = valStep(valLoader, cpcModel, cpcCriterion, PhoneLabels)
+        locLogsVal = valStep(valLoader, cpcModel, cpcCriterion, PhoneLabels, auxCriterion, predictClusterIdCriterion)
 
         if captureDataset is not None and epoch % captureEachEpochs == 0:
             print(f"Capturing data for epoch {epoch}")
@@ -422,13 +444,14 @@ def onlyCapture(
 
 
 def main(args):
-
-    # import ptvsd
-    # ptvsd.enable_attach(('0.0.0.0', 7309))
-    # print("Attach debugger now")
-    # ptvsd.wait_for_attach()
-
     args = parseArgs(args)
+
+    if args.debug:
+        import ptvsd
+        ptvsd.enable_attach(('0.0.0.0', 7310))
+        print("Attach debugger now")
+        ptvsd.wait_for_attach()
+        args.nGPU = 1
 
     utils.set_seed(args.random_seed)
     logs = {"epoch": [], "iter": [], "saveStep": args.save_step}
@@ -440,6 +463,8 @@ def main(args):
         cdata = fl.getCheckpointData(args.pathCheckpoint)
         if cdata is not None:
             data, logs, locArgs = cdata
+            if args.restartEpochCount:
+                logs = {"epoch": [], "iter": [], "saveStep": args.save_step}
             print(f"Checkpoint detected at {data}")
             fl.loadArgs(args, locArgs,
                         forbiddenAttr={"nGPU", "pathCheckpoint",
@@ -618,29 +643,66 @@ def main(args):
 
     downsampling = cpcModel.cpc.gEncoder.DOWNSAMPLING if isinstance(cpcModel, model.CPCModelNullspace) else cpcModel.gEncoder.DOWNSAMPLING
     # Training criterion
-    if args.load is not None and args.loadCriterion:
+    if args.load is not None and args.loadCriterion and not args.frozenEncoder:
         cpcCriterion = loadCriterion(args.load[0],  downsampling,
                                      len(speakers), nPhones)
     else:
         cpcCriterion = getCriterion(args, downsampling,
                                     len(speakers), nPhones)
 
-    if loadOptimizer:
+    if loadOptimizer and not args.frozenEncoder:
         state_dict = torch.load(args.load[0], 'cpu')
         cpcCriterion.load_state_dict(state_dict["cpcCriterion"])
 
     cpcCriterion.cuda()
     cpcModel.cuda()
     
+    auxCriterion = None
+    predictClusterIdCriterion = None
     # Optimizer
-    g_params = list(cpcCriterion.parameters()) + list(cpcModel.parameters())
-
+    if args.frozenEncoder:
+        print("Working with a frozen encoder")
+        g_params = list(cpcCriterion.parameters())
+        for g in cpcModel.parameters():
+            g.requires_grad = False
+    else:
+        g_params = list(cpcCriterion.parameters()) + list(cpcModel.parameters())
+        if args.useKreukLoss:
+            auxCriterion = sa.CPCUnsupersivedCriterion(1,
+                                                       1,
+                                                       args.hiddenEncoder,
+                                                       args.hiddenEncoder,
+                                                       1,
+                                                       simMeasure='cosine',
+                                                       allowed_skips_beg=args.CPCCTCSkipBeg,
+                                                       allowed_skips_end=args.CPCCTCSkipEnd,
+                                                       predict_self_loop=args.CPCCTCSelfLoop,
+                                                       learn_blank=args.CPCCTCLearnBlank,
+                                                       normalize_enc=args.CPCCTCNormalizeEncs,
+                                                       normalize_preds=args.CPCCTCNormalizePreds,
+                                                       masq_rules=args.CPCCTCMasq,
+                                                       loss_temp=args.CPCCTCLossTemp,
+                                                       no_negs_in_match_window=args.CPCCTCNoNegsMatchWin,
+                                                       limit_negs_in_batch=args.limitNegsInBatch,
+                                                       mode=args.cpc_mode,
+                                                       rnnModeRegHead='none',
+                                                       dropout=False,
+                                                       speakerEmbedding=args.speakerEmbedding,
+                                                       numLevels=1,
+                                                       segmentationThreshold=0.05,
+                                                       smartPooling=False,
+                                                       stepReduction=0.2,
+                                                       NoARonRegHead=True)
+            g_params += list(auxCriterion.parameters())
+        if args.predictClusterIds:
+            predictClusterIdCriterion = cr.PhoneCriterion(args.hiddenEncoder, nPhones, onEncoder=False, linear=True, useLSTM=False)
+            g_params += list(predictClusterIdCriterion.parameters())
     lr = args.learningRate
     optimizer = torch.optim.Adam(g_params, lr=lr,
                                  betas=(args.beta1, args.beta2),
                                  eps=args.epsilon)
 
-    if loadOptimizer and not args.onlyCapture and not args.only_classif_metric:
+    if loadOptimizer and not args.onlyCapture and not args.only_classif_metric and not args.frozenEncoder:
         print("Loading optimizer " + args.load[0])
         state_dict = torch.load(args.load[0], 'cpu')
         if "optimizer" in state_dict:
@@ -682,6 +744,12 @@ def main(args):
     cpcModel = torch.nn.DataParallel(cpcModel,
                                      device_ids=range(args.nGPU)).cuda()
     cpcCriterion = torch.nn.DataParallel(cpcCriterion,
+                                         device_ids=range(args.nGPU)).cuda()
+    if auxCriterion is not None:
+        auxCriterion = torch.nn.DataParallel(auxCriterion,
+                                         device_ids=range(args.nGPU)).cuda()
+    if predictClusterIdCriterion is not None:
+        predictClusterIdCriterion = torch.nn.DataParallel(predictClusterIdCriterion,
                                          device_ids=range(args.nGPU)).cuda()
     
     if args.supervised_classif_metric:
@@ -829,7 +897,7 @@ def main(args):
             scheduler,
             logs,
             args.headWeights,
-            args.path_phone_data)
+            args.path_phone_data, auxCriterion, predictClusterIdCriterion)
     if args.onlyCapture:  
     # caution [!] - will capture for last checkpoint (last saved state) if checkpoint directory given
     #               to use specific checkpoint provide full checkpoint file path
@@ -1005,6 +1073,9 @@ def parseArgs(argv):
     group_load.add_argument('--restart', action='store_true',
                             help="If any checkpoint is found, ignore it and "
                             "restart the training from scratch.")
+    group_load.add_argument('--restartEpochCount', action='store_true',
+                            help="If any checkpoint is found, ignore it and "
+                            "restart the training from scratch.")
     group_load.add_argument('--nullspace', action='store_true',
                             help="Additionally load nullspace")
 
@@ -1017,6 +1088,10 @@ def parseArgs(argv):
     parser.add_argument('--debug', action='store_true',
                         help="Load only a very small amount of files for "
                         "debugging purposes.")
+    parser.add_argument('--useKreukLoss', action='store_true',
+                        help="Add a Kreuk-like loss to try to improve segmentations.")
+    parser.add_argument('--predictClusterIds', action='store_true',
+                        help="Add a loss for pseudo label prediction.")
     args = parser.parse_args(argv)
 
     if args.pathDB is None and (args.pathCheckpoint is None or args.restart):
@@ -1047,11 +1122,6 @@ def parseArgs(argv):
 
 
 if __name__ == "__main__":
-    # import ptvsd
-    # ptvsd.enable_attach(('0.0.0.0', 7310))
-    # print("Attach debugger now")
-    # ptvsd.wait_for_attach()
-
     torch.multiprocessing.set_start_method('spawn')
     args = sys.argv[1:]
     main(args)

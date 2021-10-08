@@ -540,6 +540,9 @@ def parseSeqLabels(pathLabels):
     maxPhone = 0
     for line in lines:
         data = line.split()
+        if len(data) == 2:
+            _data = data[1].split(',')
+            data = [data[0]] + _data
         output[data[0]] = [int(x) for x in data[1:]]
         maxPhone = max(maxPhone, max(output[data[0]]))
     return output, maxPhone + 1

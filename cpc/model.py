@@ -252,11 +252,30 @@ class CPCAR(nn.Module):
                 # minLengthSeq = max(1, int(round(2* self.minLengthSeqMinusOne * self.segmentationThreshold**l))) + 1
                 minLengthSeq = self.minLengthSeqMinusOne + 1
                 highLvlFeatures = o if self.segmentOnContext else x
-                if self.segmentationType == 'groundTruth':
+                if self.segmentationType in ['groundTruth', 'groundTruthWError', 'groundTruthUnder', 'groundTruthOver']:
                     assert label is not None, "To use ground truth segmentation labels must be provided"
                     diffs = torch.diff(label, dim=1)
                     phoneChanges = torch.cat((torch.ones((label.shape[0], 1)).to(x.device), diffs), dim=1)
                     boundaries = torch.nonzero(phoneChanges.contiguous().view(-1), as_tuple=True)[0]
+                    if self.segmentationType == 'groundTruthWError':
+                        origBoundaries = boundaries[boundaries % x.size(1) != 0]
+                        # noiseOffset = torch.randint_like(origBoundaries, low=-3, high=4)
+                        noiseOffset = torch.randint_like(origBoundaries, low=-12, high=13)
+                        newBoundaries = origBoundaries + noiseOffset
+                        toFix = torch.where((origBoundaries // x.size(1) != newBoundaries // x.size(1)) | (newBoundaries < 0))[0]
+                        newBoundaries[toFix] = origBoundaries[toFix]
+                        boundaries = newBoundaries
+                    if self.segmentationType == 'groundTruthUnder':
+                        boundaries = boundaries[boundaries % x.size(1) != 0]
+                        perm = torch.randperm(boundaries.size(0))
+                        # idx = perm[:boundaries.size(0) // 2]
+                        idx = perm[:boundaries.size(0) // 4]
+                        boundaries = boundaries[idx]
+                    if self.segmentationType == 'groundTruthOver':
+                        for _ in range(2):
+                            addedBoundaries = torch.clone(boundaries)[:-1]
+                            addedBoundaries = addedBoundaries + (torch.diff(boundaries) // 2)
+                            boundaries = torch.unique(torch.cat((boundaries, addedBoundaries)), sorted=True)
                     # Ensure that minibatch boundaries are preserved
                     seqEndIdx = torch.arange(0, x.size(0)*x.size(1) + 1, x.size(1), device=x.device)
                     boundaries = torch.unique(torch.cat((boundaries, seqEndIdx)), sorted=True)
@@ -276,7 +295,7 @@ class CPCAR(nn.Module):
                     packedCompressedX = torch.nn.utils.rnn.pack_padded_sequence(xPadded, compressedLens, batch_first=True, enforce_sorted=False)
                 else:
                     raise NotImplementedError
-                if self.segmentationType in ['jch', 'kreuk'] or label is not None:
+                if self.segmentationType in ['jch', 'kreuk', 'groundTruth', 'groundTruthWError', 'groundTruthUnder', 'groundTruthOver']:
                     compressMatrices, compressedLens, segmentLens = getAverageSlices(boundaries, x.size(1), x.device, minLengthSeq)
                     packedCompressedX = compress_batch(
                         highLvlFeatures, compressMatrices, compressedLens, pack=True

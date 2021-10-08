@@ -12,6 +12,7 @@ from pathlib import Path
 from copy import deepcopy
 import os
 import tqdm
+import random
 
 import cpc.criterion as cr
 import cpc.criterion.soft_align as sa
@@ -67,8 +68,7 @@ def getCriterion(args, downsampling, nSpeakers):
                                                     args.negativeSamplingExt,
                                                     simMeasure=args.simMeasure,
                                                     mode=args.cpc_mode,
-                                                    rnnModeRegHead=args.rnnModeRegHead,
-                                                    rnnModeDownHead=args.rnnModeDownHead,
+                                                    rnnMode=args.rnnModeRegHead,
                                                     dropout=args.dropout,
                                                     nSpeakers=nSpeakers,
                                                     speakerEmbedding=args.speakerEmbedding,
@@ -157,6 +157,217 @@ def evalPhoneSegmentation(featureMaker, criterion, boundaryDetector, dataLoader,
     return logs
 
 
+def deltas(D):
+    res = [0]
+    for i in range(1, D+1):
+        if random.random() < 0.5:
+            res.append(i)
+            res.append(-i)
+        else:
+            res.append(-i)
+            res.append(i)
+    return res
+
+DELTA = 2
+
+def overlap(x, y):
+    if x > y:
+        x, y = y, x
+        
+    a,b = x  # left interval
+    c,d = y  # right interval
+    
+    if c >= b:
+        return 0
+        
+    max_len = max(b-a, d-c)
+    
+    if b <= d:
+        return (b - c) / max_len
+    return (d - c) / max_len
+
+def contained_interval(x, S):
+    a,b = x # tested interval
+    for da in range(-DELTA, DELTA+1):
+        for db in range(-DELTA, DELTA+1):
+            if (a+da, b+db) in S:
+                interval2 = (a+da, b+db)
+                
+                #print (x, interval2, overlap(x, interval2))
+                
+                if overlap(x, interval2) > 0.5:
+                     return True
+    return False
+
+def how_many_in(a, b):
+    """how many intervals from a match with something in b"""
+    
+    return len([x for x in a if contained_interval(x, b)])
+
+def evalPhoneSegmentationPawel(featureMaker, criterion, boundaryDetector, dataLoader, 
+                               onEncodings=True, toleranceInFrames=2, wordSegmentation=False):
+
+    featureMaker.eval()
+    logs = {"precision": 0, "recall": 0, "f1": 0, "r": 0}
+    EPS = 1e-7
+    segmentationParamRange = np.arange(0.0, 0.15, 0.01)
+
+    # results = []
+    for step, fulldata in tqdm.tqdm(enumerate(dataLoader)):
+        with torch.no_grad():
+            batchData, labelData = fulldata
+            labelPhones = labelData['phone']
+            label = labelData['word'] if wordSegmentation else labelPhones
+            cFeature, encodedData, _ = featureMaker(batchData, labelPhones)
+            if wordSegmentation:
+                cFeature = cFeature[1]
+                encodedData = cFeature['encodedData']
+                seqLens = cFeature['seqLens'] - 1
+                segmentLensBatch = cFeature['segmentLens'].cpu()
+                cFeature = cFeature['states']
+                cFeature = criterion.module.wPredictions[1].predictors[0](cFeature[:, :-criterion.module.nMatched[1], :]).squeeze()
+                features = (cFeature[:, :-1, :], encodedData[:, 1:, :])
+            else:
+                cFeature = cFeature[0]
+                B, S, H = cFeature.size()
+                seqLens = torch.ones(B, dtype=torch.int64, device=cFeature.device) * S
+                segmentLensBatch = torch.ones(B, dtype=torch.int64, device=cFeature.device)
+                features = (encodedData[:, :-1, :], encodedData[:, 1:, :]) if onEncodings else (cFeature[:, :-1, :], cFeature[:, 1:, :])
+        maxRval = -np.inf
+        diffs = torch.diff(label, dim=1)
+        trueBoundariesBatch = []
+        for b in range(diffs.size(0)):
+            boundaries = torch.nonzero(diffs[b].contiguous().view(-1), as_tuple=True)[0] + 1
+            boundaries = torch.cat((torch.Tensor([0]), boundaries))
+            trueBoundariesBatch.append(boundaries)
+
+        for segmentationParam in segmentationParamRange:
+            predictedBoundariesBatch = boundaryDetector(features, segmentationParam, seqLens)
+            
+            true_positive = 0
+            f_cnt = g_cnt = 0
+            
+            for fb, gb, segmentLens in zip(predictedBoundariesBatch, trueBoundariesBatch, segmentLensBatch):
+                fb = fb.tolist()
+                gb = gb.tolist()
+                gb = set(gb)
+                random.shuffle(fb)
+
+                g_cnt += len(gb)
+                f_cnt += len(fb)
+
+
+                for n in fb:
+                    for delta in deltas(toleranceInFrames):
+                        if n + delta in gb:
+                            gb -= {n+delta}
+                            true_positive += 1
+                            break
+            
+            precision = true_positive / (f_cnt + EPS)
+            recall = true_positive / (g_cnt + EPS)
+            f1 = 2 * (precision * recall) / (precision + recall + EPS)
+            os = recall / (precision + EPS) - 1
+            r1 = np.sqrt((1 - recall) ** 2 + os ** 2)
+            r2 = (-os + recall - 1) / (np.sqrt(2))
+            rVal = 1 - (np.abs(r1) + np.abs(r2)) / 2
+            
+            if rVal > maxRval:
+                bestSegmentationParam = segmentationParam
+                maxRval = rVal
+                bestPrecision = precision
+                bestRecall = recall
+                bestF1 = f1
+
+        logs["precision"] += np.array([bestPrecision])
+        logs["recall"] += np.array([bestRecall])
+        logs["f1"] += np.array([bestF1])
+        logs["r"] += np.array([maxRval])
+    logs = utils.update_logs(logs, step)
+
+    return logs
+
+def intervals(seq):
+    bs = seq
+    return {(bs[i], bs[i+1]) for i in range(len(bs)-1)}
+
+def evalPhoneSegmentationPawel2(featureMaker, criterion, boundaryDetector, dataLoader, 
+                                onEncodings=True, toleranceInFrames=2, wordSegmentation=False):
+
+    featureMaker.eval()
+    logs = {"precision": 0, "recall": 0, "f1": 0, "r": 0}
+    EPS = 1e-7
+    segmentationParamRange = np.arange(0.0, 0.15, 0.01)
+
+    # results = []
+    for step, fulldata in tqdm.tqdm(enumerate(dataLoader)):
+        with torch.no_grad():
+            batchData, labelData = fulldata
+            labelPhones = labelData['phone']
+            label = labelData['word'] if wordSegmentation else labelPhones
+            cFeature, encodedData, _ = featureMaker(batchData, labelPhones)
+            if wordSegmentation:
+                cFeature = cFeature[1]
+                encodedData = cFeature['encodedData']
+                seqLens = cFeature['seqLens'] - 1
+                segmentLensBatch = cFeature['segmentLens'].cpu()
+                cFeature = cFeature['states']
+                cFeature = criterion.module.wPredictions[1].predictors[0](cFeature[:, :-criterion.module.nMatched[1], :]).squeeze()
+                features = (cFeature[:, :-1, :], encodedData[:, 1:, :])
+            else:
+                cFeature = cFeature[0]
+                B, S, H = cFeature.size()
+                seqLens = torch.ones(B, dtype=torch.int64, device=cFeature.device) * S
+                segmentLensBatch = torch.ones(B, dtype=torch.int64, device=cFeature.device)
+                features = (encodedData[:, :-1, :], encodedData[:, 1:, :]) if onEncodings else (cFeature[:, :-1, :], cFeature[:, 1:, :])
+        maxRval = -np.inf
+        diffs = torch.diff(label, dim=1)
+        trueBoundariesBatch = []
+        for b in range(diffs.size(0)):
+            boundaries = torch.nonzero(diffs[b].contiguous().view(-1), as_tuple=True)[0] + 1
+            boundaries = torch.cat((torch.Tensor([0]), boundaries))
+            trueBoundariesBatch.append(boundaries)
+
+        for segmentationParam in segmentationParamRange:
+            predictedBoundariesBatch = boundaryDetector(features, segmentationParam, seqLens)
+
+            true_positive = 0
+            f_cnt = g_cnt = 0
+            
+            for fb, gb, segmentLens in zip(predictedBoundariesBatch, trueBoundariesBatch, segmentLensBatch):
+                fb = fb.tolist()
+                gb = gb.tolist()
+                f_int = intervals(fb)
+                g_int = intervals(gb)
+                
+                true_positive += how_many_in(f_int, g_int)
+                f_cnt += len(f_int)
+                g_cnt += len(g_int)
+                        
+            precision = true_positive / (f_cnt + EPS)
+            recall = true_positive / (g_cnt + EPS)
+            f1 = 2 * (precision * recall) / (precision + recall + EPS)
+            os = recall / (precision + EPS) - 1
+            r1 = np.sqrt((1 - recall) ** 2 + os ** 2)
+            r2 = (-os + recall - 1) / (np.sqrt(2))
+            rVal = 1 - (np.abs(r1) + np.abs(r2)) / 2
+            
+            if rVal > maxRval:
+                bestSegmentationParam = segmentationParam
+                maxRval = rVal
+                bestPrecision = precision
+                bestRecall = recall
+                bestF1 = f1
+
+        logs["precision"] += np.array([bestPrecision])
+        logs["recall"] += np.array([bestRecall])
+        logs["f1"] += np.array([bestF1])
+        logs["r"] += np.array([maxRval])
+    logs = utils.update_logs(logs, step)
+
+    return logs
+
+
 def run(featureMaker,
         criterion,
         boundaryDetector,
@@ -165,14 +376,15 @@ def run(featureMaker,
         onEncodings,
         wordSegmentation=False):
     print("%d batches" % len(dataLoader))
-    logs = evalPhoneSegmentation(featureMaker, criterion, boundaryDetector, dataLoader, 
-                                 onEncodings, wordSegmentation=wordSegmentation)
+    logs = evalPhoneSegmentationPawel2(featureMaker, criterion, boundaryDetector, dataLoader, 
+                                      onEncodings, wordSegmentation=wordSegmentation)
     utils.show_logs("Results", logs)
     for key, value in dict(logs).items():
         if isinstance(value, np.ndarray):
             value = value.tolist()
         logs[key] = value
     utils.save_logs(logs, f"{pathCheckpoint}_logs.json")
+
 
 
 def parse_args(argv):
@@ -188,6 +400,9 @@ def parse_args(argv):
                         help="Path to the checkpoint to evaluate.")
     parser.add_argument('--pathPhone', type=str, default=None,
                         help="Path to the phone labels.")
+    parser.add_argument('--pathPredictions', type=str, default=None,
+                        help="Path to the predicted labels. If given, will"
+                        " ignore the checkpoints.")
     parser.add_argument('--pathWords', type=str, default=None,
                         help="Path to the word labels. If given, will"
                         " compute word separability.")
@@ -239,67 +454,10 @@ def parse_args(argv):
 def main(argv):
     args = parse_args(argv)
 
-    seqNames, speakers = findAllSeqs(args.pathDB,
-                                     extension=args.file_extension,
-                                     loadCache=not args.ignore_cache)
-
-    def loadCriterion(pathCheckpoint, downsampling, nSpeakers):
-        _, _, locArgs = fl.getCheckpointData(os.path.dirname(pathCheckpoint))
-        criterion = getCriterion(locArgs, downsampling, nSpeakers)
-        state_dict = torch.load(pathCheckpoint, 'cpu')
-        criterion.load_state_dict(state_dict["cpcCriterion"])
-        return criterion
-
-    def loadCPCFeatureMaker(pathCheckpoint, gru_level=-1, get_encoded=False, keep_hidden=True):
-        """
-        Load CPC Feature Maker from CPC checkpoint file.
-        """
-        # Set LSTM level
-        if gru_level is not None and gru_level > 0:
-            updateConfig = argparse.Namespace(nLevelsGRU=gru_level)
-        else:
-            updateConfig = None
-        # Load CPC model
-        model, nHiddenGar, nHiddenEncoder = fl.loadModel(pathCheckpoint, updateConfig=updateConfig)
-        # Keep hidden units at LSTM layers on sequential batches
-        model.gAR.keepHidden = keep_hidden
-        return model, nHiddenGar, nHiddenEncoder
-
-    if args.gru_level is not None and args.gru_level > 0:
-        model, hiddenGAR, hiddenEncoder = loadCPCFeatureMaker(args.load, gru_level=args.gru_level)
-    else:
-        model, hiddenGAR, hiddenEncoder = fl.loadModel(args.load)
-
-    dimFeatures = hiddenEncoder if args.get_encoded else hiddenGAR
-
     phoneLabels, nPhones = parseSeqLabels(args.pathPhone)
     wordLabels = None
     if args.pathWords is not None:
         wordLabels, nWords = parseSeqLabels(args.pathWords)
-    model.cuda()
-    downsampling = model.cpc.gEncoder.DOWNSAMPLING if isinstance(model, CPCModelNullspace) else model.gEncoder.DOWNSAMPLING
-    model = torch.nn.DataParallel(model, device_ids=range(args.nGPU))
-
-    criterion = loadCriterion(args.load[0], downsampling, len(speakers))
-    criterion = torch.nn.DataParallel(criterion, device_ids=range(args.nGPU)).cuda()
-
-    # Dataset
-    if args.debug:
-        seqNames = seqNames[:100]
-
-    db = AudioBatchData(args.pathDB, args.size_window, seqNames,
-                        phoneLabels, len(speakers), nProcessLoader=args.nProcessLoader, wordLabelsDict=wordLabels)
-
-    batchSize = args.batchSizeGPU * args.nGPU
-    dataLoader = db.getDataLoader(batchSize, 'sequential', False, numWorkers=0)
-
-    # Checkpoint directory
-    pathCheckpoint = Path(args.pathCheckpoint)
-    pathCheckpoint.mkdir(exist_ok=True)
-    pathCheckpoint = str(pathCheckpoint / "checkpoint")
-
-    with open(f"{pathCheckpoint}_args.json", 'w') as file:
-        json.dump(vars(args), file, indent=2)
 
     if args.boundaryDetector == 'jch':
         boundaryDetector = utils.jchBoundaryDetector
@@ -310,8 +468,73 @@ def main(argv):
     else:
         raise NotImplementedError
 
-    run(model, criterion, boundaryDetector, dataLoader, pathCheckpoint, args.get_encoded, 
-        wordSegmentation=args.pathWords is not None)
+    if args.pathPredictions is not None:
+        args.pathCheckpoint = args.pathPredictions.split('.txt')[0] + '_results/'
+        os.makedirs(args.pathCheckpoint, exist_ok=True)
+        predictLabels, nTargets = parseSeqLabels(args.pathPredictions)
+        print(f"Results path: {args.pathCheckpoint}")
+        runWithFiles(phoneLabels, predictLabels, boundaryDetector, args.pathCheckpoint + 'segmentation')
+    else:
+        seqNames, speakers = findAllSeqs(args.pathDB,
+                                        extension=args.file_extension,
+                                        loadCache=not args.ignore_cache)
+
+        def loadCriterion(pathCheckpoint, downsampling, nSpeakers):
+            _, _, locArgs = fl.getCheckpointData(os.path.dirname(pathCheckpoint))
+            criterion = getCriterion(locArgs, downsampling, nSpeakers)
+            state_dict = torch.load(pathCheckpoint, 'cpu')
+            criterion.load_state_dict(state_dict["cpcCriterion"])
+            return criterion
+
+        def loadCPCFeatureMaker(pathCheckpoint, gru_level=-1, get_encoded=False, keep_hidden=True):
+            """
+            Load CPC Feature Maker from CPC checkpoint file.
+            """
+            # Set LSTM level
+            if gru_level is not None and gru_level > 0:
+                updateConfig = argparse.Namespace(nLevelsGRU=gru_level)
+            else:
+                updateConfig = None
+            # Load CPC model
+            model, nHiddenGar, nHiddenEncoder = fl.loadModel(pathCheckpoint, updateConfig=updateConfig)
+            # Keep hidden units at LSTM layers on sequential batches
+            model.gAR.keepHidden = keep_hidden
+            return model, nHiddenGar, nHiddenEncoder
+
+        if args.gru_level is not None and args.gru_level > 0:
+            model, hiddenGAR, hiddenEncoder = loadCPCFeatureMaker(args.load, gru_level=args.gru_level)
+        else:
+            model, hiddenGAR, hiddenEncoder = fl.loadModel(args.load)
+
+        dimFeatures = hiddenEncoder if args.get_encoded else hiddenGAR
+
+        model.cuda()
+        downsampling = model.cpc.gEncoder.DOWNSAMPLING if isinstance(model, CPCModelNullspace) else model.gEncoder.DOWNSAMPLING
+        model = torch.nn.DataParallel(model, device_ids=range(args.nGPU))
+
+        criterion = loadCriterion(args.load[0], downsampling, len(speakers))
+        criterion = torch.nn.DataParallel(criterion, device_ids=range(args.nGPU)).cuda()
+
+        # Dataset
+        if args.debug:
+            seqNames = seqNames[:100]
+
+        db = AudioBatchData(args.pathDB, args.size_window, seqNames,
+                            phoneLabels, len(speakers), nProcessLoader=args.nProcessLoader, wordLabelsDict=wordLabels)
+
+        batchSize = args.batchSizeGPU * args.nGPU
+        dataLoader = db.getDataLoader(batchSize, 'sequential', False, numWorkers=0)
+
+        # Checkpoint directory
+        pathCheckpoint = Path(args.pathCheckpoint)
+        pathCheckpoint.mkdir(exist_ok=True)
+        pathCheckpoint = str(pathCheckpoint / "checkpoint")
+
+        with open(f"{pathCheckpoint}_args.json", 'w') as file:
+            json.dump(vars(args), file, indent=2)
+
+        run(model, criterion, boundaryDetector, dataLoader, pathCheckpoint, args.get_encoded, 
+            wordSegmentation=args.pathWords is not None)
 
 
 
