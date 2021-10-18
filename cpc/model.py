@@ -228,7 +228,7 @@ class CPCAR(nn.Module):
             assert x.size(1) % self.segmentationThreshold == 0
 
         if self.reverse:
-            raise NotImplementedError
+            # raise NotImplementedError
             x = torch.flip(x, [1])
         try:
             for head in self.heads:
@@ -333,7 +333,7 @@ class CPCAR(nn.Module):
         # For better modularity, a sequence's order should be preserved
         # by each module
         if self.reverse:
-            raise NotImplementedError
+            # raise NotImplementedError
             for l in range(self.numLevels):
                 outs[l] = torch.flip(outs[l], [1])
         return outs

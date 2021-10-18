@@ -120,47 +120,70 @@ def parse_args(argv):
 
     base_parser = argparse.ArgumentParser(description='ABX metric')
 
-    subparsers = base_parser.add_subparsers(dest='load')
-    parser_checkpoint = subparsers.add_parser('from_checkpoint')
-    update_base_parser(parser_checkpoint)
-    parser_checkpoint.add_argument('path_checkpoint', type=str,
+    # subparsers = base_parser.add_subparsers(dest='load')
+    # parser_checkpoint = subparsers.add_parser('from_checkpoint')
+    # update_base_parser(parser_checkpoint)
+    base_parser.add_argument('--path_checkpoint', type=str, nargs='*',
                                    help="Path to the model's checkpoint")
-    parser_checkpoint.add_argument('path_item_file', type=str,
+    base_parser.add_argument('--path_item_file', type=str,
                                    help="Path to the ABX .item file containing "
                                    "the triplets labels")
-    parser_checkpoint.add_argument('path_dataset', type=str,
+    base_parser.add_argument('--path_dataset', type=str, nargs="+",
                                    help="Path to the dataset")
-    parser_checkpoint.add_argument('--seq_norm', action='store_true',
+    base_parser.add_argument('--seq_norm', action='store_true',
                                    help='If activated, normalize each batch '
                                    'of feature across the time channel before '
                                    'computing ABX.')
-    parser_checkpoint.add_argument('--max_size_seq', default=64000, type=int,
+    base_parser.add_argument('--max_size_seq', default=64000, type=int,
                                    help='Maximal number of frames to consider '
                                    'when computing a batch of features.')
-    parser_checkpoint.add_argument('--strict', action='store_true',
+    base_parser.add_argument('--strict', action='store_true',
                                    help='If activated, each batch of feature '
                                    'will contain exactly max_size_seq frames.')
-    parser_checkpoint.add_argument('--file_extension', type=str,
-                                   default='.wav',
+    base_parser.add_argument('--file_extension', type=str, nargs="+", default='.wav',
                                    help='Extension of ecah audio file in the '
                                    'dataset.')
-    parser_checkpoint.add_argument('--get_encoded', action='store_true',
+    base_parser.add_argument('--get_encoded', action='store_true',
                                    help='If activated, compute the ABX score '
                                    'using the output of the encoder network.')
-    parser_checkpoint.add_argument('--cpcLevel', default=0, type=int,
+    base_parser.add_argument('--cpcLevel', default=0, type=int,
                                    help='Index of the CPC head at to which extract features. ' 
                                    'Ignored if get_encoded is True.')
+    base_parser.add_argument('--ignore_cache', action='store_true',
+                        help="Activate if the sequences in pathDB have"
+                        " changed.")
+    base_parser.add_argument('--load',  type=str, default='from_checkpoint',
+                        help="quickfix")
 
-    parser_db = subparsers.add_parser('from_pre_computed')
-    update_base_parser(parser_db)
-    parser_db.add_argument('path_features', type=str,
-                           help="Path to pre-computed torch features (.pt)")
-    parser_db.add_argument('--file_extension', type=str,
-                           default='.pt', help='Extension of each feature '
-                           'in the dataset')
+    base_parser.add_argument('--debug', action='store_true')
+    base_parser.add_argument('--feature_size', type=int, default=0.01,
+                        help="Size (in s) of one feature")
+    base_parser.add_argument('--cuda', action='store_true',
+                        help="Use the GPU to compute distances")
+    base_parser.add_argument('--mode', type=str, default='all',
+                        choices=['all', 'within', 'across'],
+                        help="Type of ABX score to compute")
+    base_parser.add_argument("--max_size_group", type=int, default=10,
+                        help="Max size of a group while computing the"
+                             "ABX score")
+    base_parser.add_argument("--max_x_across", type=int, default=5,
+                        help="When computing the ABX across score, maximum"
+                             "number of speaker X to sample per couple A,B")
+    base_parser.add_argument("--out", type=str, default=None,
+                        help="Path where the results should be saved")
 
+    # parser_db = subparsers.add_parser('from_pre_computed')
+    # update_base_parser(parser_db)
+    # parser_db.add_argument('path_features', type=str,
+    #                        help="Path to pre-computed torch features (.pt)")
+    # parser_db.add_argument('--file_extension', type=str,
+    #                        default='.pt', help='Extension of each feature '
+    #                        'in the dataset')
+    args = base_parser.parse_args(argv)
+    args.path_checkpoint = [str(Path(x).resolve()) for x in args.path_checkpoint]
+    args.out = str(Path(args.out).resolve())
     # multi-gpu / multi-node
-    return base_parser.parse_args(argv)
+    return args
 
 
 def main(argv):
@@ -169,7 +192,7 @@ def main(argv):
 
     if args.load == 'from_checkpoint':
         # Checkpoint
-        model = loadModel([args.path_checkpoint])[0]
+        model = loadModel(args.path_checkpoint)[0]
         model.gAR.keepHidden = True
         # Feature maker
         feature_maker = FeatureModule(model, args.get_encoded, args.cpcLevel).cuda().eval()
@@ -192,8 +215,9 @@ def main(argv):
     step_feature = 1 / args.feature_size
 
     # Get the list of sequences
-    seq_list, _ = findAllSeqs(args.path_dataset, extension=args.file_extension)
-    seq_list = [(str(Path(x).stem), str(Path(args.path_dataset) / x))
+    seq_list, _ = findAllSeqs(args.path_dataset, extension=args.file_extension,
+                                     loadCache=not args.ignore_cache)
+    seq_list = [(str(Path(x).stem), str(Path(args.path_dataset[0]) / x))
                 for (_, x) in seq_list]
 
     if args.debug:

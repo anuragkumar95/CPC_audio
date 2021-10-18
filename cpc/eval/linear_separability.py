@@ -285,6 +285,8 @@ def parse_args(argv):
                         " compute the phone separability.")
     parser.add_argument('--PER', action='store_true',
                         help="Not train, just compute PER")
+    parser.add_argument('--framewise', action='store_true',
+                        help="Not train, just compute framewise accuracy")
     parser.add_argument('--CTC', action='store_true',
                         help="Use the CTC loss (for phone separability only)")
     parser.add_argument('--CTC_forbid_blank', action='store_true',
@@ -349,11 +351,11 @@ def parse_args(argv):
     parser.add_argument('--centerpushFile', type=str, default=None, help="path to checkpoint containing cluster centers")
     parser.add_argument('--centerpushDeg', type=float, default=None, help="part of (euclidean) distance to push to the center")
 
-    parser.add_argument('--CPCLevel', type=int, default=0, help="")
-    parser.add_argument('--linearClassifier', action='store_true')
-    parser.add_argument('--convClassifier', action='store_true')
-    parser.add_argument('--useLSTM', action='store_true')
-    parser.add_argument('--upsampleSeq', action='store_true')
+    parser.add_argument('--CPCLevel', type=int, default=0, help="CPC level from which the features will be used to train the classifier") # 
+    parser.add_argument('--linearClassifier', action='store_true', help="Whether to use a linear classifier") # 
+    parser.add_argument('--convClassifier', action='store_true', help="Whether to use a convolutional classifier") # 
+    parser.add_argument('--useLSTM', action='store_true', help="Whether to mount a classifier on top of an LSTM network") #
+    parser.add_argument('--upsampleSeq', action='store_true', help="(for CPCLevel == 1 only) Whether to upsample the sequence") #
 
     args = parser.parse_args(argv)
     if args.CPCLevel > 0:
@@ -379,7 +381,7 @@ def main(argv):
         ptvsd.wait_for_attach()
         args.nGPU = 1
     logs = {"epoch": [], "iter": [], "saveStep": args.save_step}
-    loadCriterion = True if args.PER else False
+    loadCriterion = True if args.PER or args.framewise else False
 
     seqNames, speakers = findAllSeqs(args.pathDB,
                                      extension=args.file_extension,
@@ -524,12 +526,28 @@ def main(argv):
         with open(f"{args.pathCheckpoint}_args.json", 'w') as file:
             json.dump(vars(args), file, indent=2)
         logs = val_step(model, criterion, val_loader, args.CPCLevel, computeAccuracy=True, 
-                        label_key=labelKey, centerpushSettings=centerpushSettings)
+                        label_key=labelKey)
         for key, value in dict(logs).items():
             if isinstance(value, np.ndarray):
                 value = value.tolist()
             logs[key] = value
-        utils.save_logs(logs, f"{pathCheckpoint}_logs.json")
+        utils.save_logs(logs, f"{args.pathCheckpoint}_logs.json")
+    elif args.framewise:
+        assert isinstance(criterion.module, cr.PhoneCriterion)
+        # Checkpoint directory
+        args.pathCheckpoint = Path(args.pathCheckpoint)
+        args.pathCheckpoint.mkdir(exist_ok=True)
+        args.pathCheckpoint = str(args.pathCheckpoint / "framewise")
+
+        with open(f"{args.pathCheckpoint}_args.json", 'w') as file:
+            json.dump(vars(args), file, indent=2)
+        logs = val_step(model, criterion, val_loader, args.CPCLevel, computeAccuracy=True, 
+                        label_key=labelKey)
+        for key, value in dict(logs).items():
+            if isinstance(value, np.ndarray):
+                value = value.tolist()
+            logs[key] = value
+        utils.save_logs(logs, f"{args.pathCheckpoint}_logs.json")
     else:
         # Optimizer
         g_params = list(criterion.parameters())
