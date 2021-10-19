@@ -229,15 +229,15 @@ class CPCUnsupersivedCriterion(BaseCriterion):
         self.allowed_skips_beg = allowed_skips_beg
         self.allowed_skips_end = allowed_skips_end
         self.predict_self_loop = predict_self_loop
-        # if predict_self_loop:
-        #     self.self_loop_gain = torch.nn.Parameter(torch.ones(1))
-        # else:
-        #     self.register_parameter('self_loop_gain', None)
+        if predict_self_loop:
+            self.self_loop_gain = torch.nn.Parameter(torch.ones(1))
+        else:
+            self.register_parameter('self_loop_gain', None)
         self.limit_negs_in_batch = limit_negs_in_batch
 
         if masq_rules:
-            raise NotImplementedError
-            masq_buffer = torch.zeros(self.nMatched, self.nPredicts)
+            assert numLevels < 2, "masq_rules is not (yet) compatible with mACPC architecture"
+            masq_buffer = torch.zeros(self.nMatched[0], nPredicts)
             for rule in masq_rules.split(','):
                 a,b,c,d = [int(a) if a.lower() != "none" else None for a in rule.split(':')]
                 masq_buffer[a:b,c:d] = 1
@@ -320,11 +320,9 @@ class CPCUnsupersivedCriterion(BaseCriterion):
         extra_preds = []
 
         if self.learn_blank:
-            raise NotImplementedError
             extra_preds.append(self.blank_proto.expand(batchSize, maxWindowSize, self.blank_proto.size(2), 1))
 
         if self.predict_self_loop:
-            raise NotImplementedError
             # old and buggy
             # extra_preds.append(cFeature.unsqueeze(-1))
             # new and shiny
@@ -377,7 +375,7 @@ class CPCUnsupersivedCriterion(BaseCriterion):
 
         # print('ls-stats', log_scores.mean().item(), log_scores.std().item())
         if self.masq_buffer is not None:
-            raise NotImplementedError
+            # raise NotImplementedError 
             masq_buffer = self.masq_buffer
             if extra_preds:
                 masq_buffer = torch.cat([masq_buffer[:, :, :1]] * (len(extra_preds) - 1) + [masq_buffer], dim=2)
@@ -427,6 +425,7 @@ class CPCUnsupersivedCriterion(BaseCriterion):
                 seqSize = torch.IntTensor([cFeature.size(1)] * cFeature.size(0))
             
             if self.mode == "reverse":
+                assert self.numLevels < 2, "reverse cpc_mode is not (yet) compatible with mACPC architecture"
                 encodedData = torch.flip(encodedData, [1])
                 cFeature = torch.flip(cFeature, [1])
 
