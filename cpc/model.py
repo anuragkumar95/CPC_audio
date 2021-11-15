@@ -228,7 +228,7 @@ class CPCAR(nn.Module):
             assert x.size(1) % self.segmentationThreshold == 0
 
         if self.reverse:
-            # raise NotImplementedError
+            raise NotImplementedError
             x = torch.flip(x, [1])
         try:
             for head in self.heads:
@@ -333,7 +333,7 @@ class CPCAR(nn.Module):
         # For better modularity, a sequence's order should be preserved
         # by each module
         if self.reverse:
-            # raise NotImplementedError
+            raise NotImplementedError
             for l in range(self.numLevels):
                 outs[l] = torch.flip(outs[l], [1])
         return outs
@@ -434,14 +434,34 @@ class CPCModelNullspace(nn.Module):
         self.nullspace = nn.Linear(nullspace.shape[0], nullspace.shape[1], bias=False)
         self.nullspace.weight = nn.Parameter(nullspace.T)
         self.gEncoder = self.cpc.gEncoder
+        self.gAR = self.cpc.gAR
 
 
     def forward(self, batchData, label):
         cFeature, encodedData, label = self.cpc(batchData, label)
-        cFeature = self.nullspace(cFeature)
+        cFeature[0] = self.nullspace(cFeature[0])
         encodedData = self.nullspace(encodedData)
         return cFeature, encodedData, label
 
+class CPCModelPCA(nn.Module):
+    def __init__(self,
+                 cpc,
+                 pcaA,
+                 pcaB):
+
+        super(CPCModelPCA, self).__init__()
+        self.cpc = cpc
+        self.pcaA = pcaA
+        self.pcaB = pcaB
+        self.gEncoder = self.cpc.gEncoder
+        self.gAR = self.cpc.gAR
+
+
+    def forward(self, batchData, label):
+        cFeature, encodedData, label = self.cpc(batchData, label)
+        cFeature[0] = cFeature[0] @ self.pcaA + self.pcaB
+        encodedData = encodedData @ self.pcaA + self.pcaB
+        return cFeature, encodedData, label
 
 class ConcatenatedModel(nn.Module):
 

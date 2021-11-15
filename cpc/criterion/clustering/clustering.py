@@ -5,11 +5,12 @@
 import progressbar
 import torch
 import torch.nn as nn
-import cpc.feature_loader as fl
-from .. import CTCPhoneCriterion
+# import cpc.feature_loader as fl
+# from .. import CTCPhoneCriterion
 from os.path import join, exists
 from os import remove
 from time import time
+from cpc.feature_loader import seqNormalization
 
 
 class kMeanCluster(nn.Module):
@@ -33,8 +34,9 @@ class kMeanCluster(nn.Module):
             CkLengths = torch.sqrt((Ck*Ck).sum(2))
             Ck = Ck / CkLengths.view(*(CkLengths.shape), 1)
             clen = torch.sqrt((Ck*Ck).sum(2))
-        features = features.contiguous().view(B*S, 1, -1)
-        return ((features - Ck)**2).sum(dim=2).view(-1, S, self.k)
+        Ck = Ck.squeeze()
+        features = features.squeeze()
+        return -2 * features @ Ck.T + torch.sum(Ck**2, axis=1) + torch.sum(features**2, axis=1)[:, None]
 
 
 class kMeanClusterStep(torch.nn.Module):
@@ -65,7 +67,7 @@ def kMeanGPU(dataLoader, featureMaker, k, n_group=1,
              MAX_ITER=100, EPSILON=1e-4,
              perIterSize=-1, start_clusters=None,
              save=False, load=False, save_dir=None,
-             save_last=5, norm_vec_len=False):
+             save_last=5, norm_vec_len=False, seqNorm=False):
 
     print(f"Start Kmean clustering with {k} clusters and {n_group} groups...")
 
@@ -83,6 +85,8 @@ def kMeanGPU(dataLoader, featureMaker, k, n_group=1,
             with torch.no_grad():
                 for index, data in enumerate(dataLoader):
                     cFeature = featureMaker(data)
+                    if seqNorm:
+                        cFeature = seqNormalization(cFeature)
                     cFeature = cFeature.contiguous().view(-1, cFeature.size(2)//n_group)
                     Ck.append(cFeature)
                     if index > k:

@@ -9,8 +9,9 @@ import json
 import argparse
 from .cpc_default_config import get_default_cpc_config
 from .dataset import parseSeqLabels
-from .model import CPCModel, CPCModelNullspace, ConcatenatedModel
-
+from collections import OrderedDict
+from .model import CPCModel, CPCModelNullspace, CPCModelPCA, ConcatenatedModel
+import numpy as np
 
 class FeatureModule(torch.nn.Module):
     r"""
@@ -181,7 +182,7 @@ def getAR(args):
     return arNet
 
 
-def loadModel(pathCheckpoints, loadStateDict=True, load_nullspace=False, updateConfig=None, loadBestNotLast=False):
+def loadModel(pathCheckpoints, loadStateDict=True, load_nullspace=False, updateConfig=None, loadBestNotLast=False, pcaPath=None):
     models = []
     hiddenGar, hiddenEncoder = 0, 0
     for path in pathCheckpoints:
@@ -213,6 +214,12 @@ def loadModel(pathCheckpoints, loadStateDict=True, load_nullspace=False, updateC
             state_dict = torch.load(path, 'cpu')
 
             # CPCModelNullspace
+            if pcaPath is not None:
+                pcaA = torch.from_numpy(np.load(pcaPath + "_A.npy")).cuda()
+                pcaB = torch.from_numpy(np.load(pcaPath + "_b.npy")).cuda()
+                m_ = CPCModelPCA(m_, pcaA, pcaB)
+                hiddenGar = len(pcaB)
+                hiddenEncoder = len(pcaB)
             if load_nullspace:
                 dim_features = hiddenGar
                 dim_nullspace = dim_features - locArgs.dim_inter
@@ -221,7 +228,8 @@ def loadModel(pathCheckpoints, loadStateDict=True, load_nullspace=False, updateC
                 hiddenGar -= locArgs.dim_inter
                 hiddenEncoder -= locArgs.dim_inter
             if not loadBestNotLast:
-                m_.load_state_dict(state_dict["gEncoder"], strict=False)
+                fixedStateDict = OrderedDict((k.replace('baseNet', 'heads.0'), v) for k, v in state_dict["gEncoder"].items())
+                m_.load_state_dict(fixedStateDict, strict=False)
             else:
                 m_.load_state_dict(state_dict["best"], strict=False)
 

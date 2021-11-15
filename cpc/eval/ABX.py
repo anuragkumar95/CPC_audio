@@ -149,6 +149,12 @@ def parse_args(argv):
     base_parser.add_argument('--cpcLevel', default=0, type=int,
                                    help='Index of the CPC head at to which extract features. ' 
                                    'Ignored if get_encoded is True.')
+    base_parser.add_argument('--level_gru', type=int, default=None,
+                        help='Specify the LSTM hidden level to take the representation (default: None).')
+    base_parser.add_argument('--nullspace', action='store_true',
+                          help="Additionally load nullspace")
+    base_parser.add_argument('--pathPCA', type=str,
+                             help="Path to the PCA matrices.")
     base_parser.add_argument('--ignore_cache', action='store_true',
                         help="Activate if the sequences in pathDB have"
                         " changed.")
@@ -190,9 +196,15 @@ def main(argv):
 
     args = parse_args(argv)
 
+    if args.level_gru is None:
+        updateConfig = None
+    else:
+        updateConfig = argparse.Namespace(nLevelsGRU=args.level_gru)
+
     if args.load == 'from_checkpoint':
         # Checkpoint
-        model = loadModel(args.path_checkpoint)[0]
+        # model = loadModel(args.path_checkpoint)[0]
+        model = loadModel(args.path_checkpoint, updateConfig=updateConfig, load_nullspace=args.nullspace, pcaPath=args.pathPCA)[0]
         model.gAR.keepHidden = True
         # Feature maker
         feature_maker = FeatureModule(model, args.get_encoded, args.cpcLevel).cuda().eval()

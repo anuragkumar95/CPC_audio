@@ -19,13 +19,13 @@ import cpc.criterion as cr
 import cpc.feature_loader as fl
 import cpc.utils.misc as utils
 from cpc.dataset import AudioBatchData, findAllSeqs, filterSeqs, parseSeqLabels
-from cpc.model import CPCModelNullspace
+from cpc.model import CPCModelNullspace, CPCModelPCA
 # from cpc.criterion.seq_alignment import collapseLabelChain, getSeqPER
 
 
 def getCriterion(args, dim_features, dim_inter, speakers):
     phoneLabels = None
-    if args.pathPhone is not None:
+    if args.mode in ["phonemes", "phonemes_nullspace"]:
 
         phoneLabels, nPhones = parseSeqLabels(args.pathPhone)
         labelKey = 'phone'
@@ -58,7 +58,7 @@ def getCriterion(args, dim_features, dim_inter, speakers):
 
 
 
-def train_step(feature_maker, criterion, data_loader, optimizer, CPCLevel, label_key="speaker", centerpushSettings=None):
+def train_step(feature_maker, criterion, data_loader, optimizer, CPCLevel, label_key="speaker", centerpushSettings=None, seqNorm=False):
     if feature_maker.optimize:
         feature_maker.train()
     criterion.train()
@@ -74,6 +74,9 @@ def train_step(feature_maker, criterion, data_loader, optimizer, CPCLevel, label
         label = label_data[label_key]
         c_feature, encoded_data, _ = feature_maker(batch_data, label)
         c_feature = c_feature[CPCLevel]
+        if seqNorm:
+            c_feature = fl.seqNormalization(c_feature)
+            encoded_data = fl.seqNormalization(encoded_data)
         if not feature_maker.optimize:
             encoded_data = encoded_data.detach()
             if isinstance(c_feature, dict):
@@ -101,7 +104,7 @@ def train_step(feature_maker, criterion, data_loader, optimizer, CPCLevel, label
     return logs
 
 
-def val_step(feature_maker, criterion, data_loader, CPCLevel, computeAccuracy, label_key="speaker", centerpushSettings=None):
+def val_step(feature_maker, criterion, data_loader, CPCLevel, computeAccuracy, label_key="speaker", centerpushSettings=None, seqNorm=False):
     feature_maker.eval()
     criterion.eval()
     if computeAccuracy:
@@ -115,6 +118,9 @@ def val_step(feature_maker, criterion, data_loader, CPCLevel, computeAccuracy, l
             label = label_data[label_key]
             c_feature, encoded_data, _ = feature_maker(batch_data, label)
             c_feature = c_feature[CPCLevel]
+            if seqNorm:
+                c_feature = fl.seqNormalization(c_feature)
+                encoded_data = fl.seqNormalization(encoded_data)
             if centerpushSettings:
                 centers, pushDeg = centerpushSettings
                 c_feature = utils.pushToClosestForBatch(c_feature, centers, deg=pushDeg)
@@ -137,7 +143,8 @@ def run(feature_maker,
         path_checkpoint,
         CPCLevel,
         label_key="speaker",
-        centerpushSettings=None):
+        centerpushSettings=None,
+        seqNorm=False):
 
     start_epoch = len(logs["epoch"])
 
@@ -148,12 +155,12 @@ def run(feature_maker,
     for epoch in range(start_epoch, n_epochs):
 
         logs_train = train_step(feature_maker, criterion, train_loader,
-                                optimizer, CPCLevel, label_key=label_key, centerpushSettings=centerpushSettings)
+                                optimizer, CPCLevel, label_key=label_key, centerpushSettings=centerpushSettings, seqNorm=seqNorm)
         # computeValAccuracy = not isinstance(criterion.module, cr.CTCPhoneCriterion) or epoch == n_epochs - 1
         logs_val = val_step(feature_maker, criterion, val_loader, 
                             CPCLevel, 
                             computeAccuracy=True,
-                            label_key=label_key, centerpushSettings=centerpushSettings)
+                            label_key=label_key, centerpushSettings=centerpushSettings, seqNorm=seqNorm)
 
         print('')
         print('_'*50)
@@ -343,7 +350,7 @@ def parse_args(argv):
                           help="Mode for example phonemes, speakers, speakers_factorized, phonemes_nullspace")
     parser.add_argument("--path_speakers_factorized", type=str, default="/pio/scratch/1/i273233/linear_separability/cpc/cpc_official_speakers_factorized/checkpoint_9.pt",
                           help="Path to the checkpoint from speakers factorized")
-    parser.add_argument('--dim_inter', type=int, default=128, help="Dimension between factorized matrices (dim_features x dim_inter) x (dim_inter x len(speakers)) ")
+    parser.add_argument('--dim_inter', type=int, default=64, help="Dimension between factorized matrices (dim_features x dim_inter) x (dim_inter x len(speakers)) ")
     parser.add_argument('--gru_level', type=int, default=-1,
                         help='Hidden level of the LSTM autoregressive model to be taken'
                         '(default: -1, last layer).')
@@ -356,6 +363,9 @@ def parse_args(argv):
     parser.add_argument('--convClassifier', action='store_true', help="Whether to use a convolutional classifier") # 
     parser.add_argument('--useLSTM', action='store_true', help="Whether to mount a classifier on top of an LSTM network") #
     parser.add_argument('--upsampleSeq', action='store_true', help="(for CPCLevel == 1 only) Whether to upsample the sequence") #
+    parser.add_argument('--pathPCA', type=str,
+                        help="Path to the PCA matrices.")
+    parser.add_argument('--seqNorm', action='store_true', help="Normalize across sequence dimension")
 
     args = parser.parse_args(argv)
     if args.CPCLevel > 0:
@@ -465,6 +475,12 @@ def main(argv):
         dim_features = dim_features - dim_inter
         nullspace = my_nullspace(speakers_factorized.linearSpeakerClassifier[0].weight)
         model = CPCModelNullspace(model, nullspace)
+
+    if args.pathPCA is not None:
+        pcaA = torch.from_numpy(np.load(args.pathPCA + "_A.npy")).cuda()
+        pcaB = torch.from_numpy(np.load(args.pathPCA + "_b.npy")).cuda()
+        model = CPCModelPCA(model, pcaA, pcaB)
+        dim_features = len(pcaB)
 
     phoneLabels = None
     if loadCriterion:
@@ -590,7 +606,7 @@ def main(argv):
             centerpushSettings = None
         run(model, criterion, train_loader, val_loader, optimizer, logs,
             args.n_epoch, args.pathCheckpoint, args.CPCLevel if args.CTC else 0, 
-            label_key=labelKey, centerpushSettings=centerpushSettings)
+            label_key=labelKey, centerpushSettings=centerpushSettings, seqNorm=args.seqNorm)
 
 
 if __name__ == "__main__":

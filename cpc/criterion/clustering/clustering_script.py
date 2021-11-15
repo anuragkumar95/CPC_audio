@@ -82,12 +82,20 @@ def parseArgs(argv):
     parser.add_argument('--nullspace', action='store_true',
                           help="Additionally load nullspace")
 
+    parser.add_argument('--pathPCA', type=str,
+                        help="Path to the PCA matrices.")
+
     parser.add_argument('--norm_vec_len', action='store_true',
                         help="Normalize vector lengths.")
 
     parser.add_argument('--cpcLevel', default=0, type=int,
                         help='Index of the CPC head at to which extract features. ' 
                         'Ignored if get_encoded is True.')
+
+    parser.add_argument('--seqNorm', action='store_true',
+                        help='If activated, normalize each batch '
+                        'of feature across the time channel before '
+                        'computing distances.')
 
     return parser.parse_args(argv)
 
@@ -105,6 +113,12 @@ if __name__ == "__main__":
     from cpc.dataset import findAllSeqs, filterSeqs, AudioBatchData
 
     args = parseArgs(sys.argv[1:])
+    if args.debug:
+        import ptvsd
+        ptvsd.enable_attach(('0.0.0.0', 7310))
+        print("Attach debugger now")
+        ptvsd.wait_for_attach()
+        args.nGPU = 1
     # Export absolute paths for later use
     args.pathCheckpoint = os.path.abspath(args.pathCheckpoint)
     args.pathOutput = os.path.abspath(args.pathOutput)
@@ -117,10 +131,10 @@ if __name__ == "__main__":
             f"Found last_checkpoint.pt in the output directory, please check the option --load !"
 
     print(args)
-    seqNames, speakers = findAllSeqs(args.pathDB,
-                                     speaker_level=args.recursionLevel,
-                                     extension=args.extension,
-                                     loadCache=True)
+    seqNames, speakers = findAllSeqs([args.pathDB],
+                                     speakerLevel=args.recursionLevel,
+                                     extension=[args.extension],
+                                     loadCache=False)
 
     if args.seqList is not None:
         seqNames = filterSeqs(args.seqList, seqNames)
@@ -159,8 +173,9 @@ if __name__ == "__main__":
     else:
         updateConfig = argparse.Namespace(nLevelsGRU=args.level_gru)
 
-    model = loadModel([args.pathCheckpoint], updateConfig=updateConfig, load_nullspace=args.nullspace)[0]
+    model = loadModel([args.pathCheckpoint], updateConfig=updateConfig, load_nullspace=args.nullspace, pcaPath=args.pathPCA)[0]
     #model = loadModel([args.pathCheckpoint])[0]#, updateConfig=updateConfig)[0]
+    print(model)
 
     featureMaker = FeatureModule(model, args.encoder_layer, args.cpcLevel)
     print("Checkpoint loaded!")
@@ -187,7 +202,8 @@ if __name__ == "__main__":
                             save=args.save, load=args.load, 
                             save_dir=os.path.dirname(args.pathOutput),
                             save_last=args.save_last,
-                            norm_vec_len=args.norm_vec_len).cpu()
+                            norm_vec_len=args.norm_vec_len,
+                            seqNorm=args.seqNorm).cpu()
 
 
     print(f'Ran clustering '

@@ -32,7 +32,7 @@ def parseArgs(argv):
     parser.add_argument('--max_size_seq', type=int, default=64000,
                         help='Maximal number of frames to consider in each chunk'
                         'when computing CPC features (defaut: 64000).')
-    parser.add_argument('--seq_norm', type=bool, default=False,
+    parser.add_argument('--seq_norm', action='store_true',
                         help='If True, normalize the output along the time'
                         'dimension to get chunks of mean zero and var 1 (default: False).')
     parser.add_argument('--strict', type=bool, default=False,
@@ -56,6 +56,12 @@ def parseArgs(argv):
 def main(argv):
     # Args parser
     args = parseArgs(argv)
+
+    if args.debug:
+        import ptvsd
+        ptvsd.enable_attach(('0.0.0.0', 7310))
+        print("Attach debugger now")
+        ptvsd.wait_for_attach()
 
     print("=============================================================")
     print(f"Building CPC features from {args.pathDB}")
@@ -119,8 +125,7 @@ def main(argv):
         CPC_features = buildFeature(featureMaker, x,
                                     seqNorm=args.seq_norm,
                                     strict=args.strict,
-                                    maxSizeSeq=args.max_size_seq,
-                                    labels=phoneLabels)
+                                    maxSizeSeq=args.max_size_seq)
         return CPC_features.squeeze(0).float().cpu().numpy()
 
     # Building features
@@ -134,7 +139,10 @@ def main(argv):
 
         file_path = vals[1]
         # Computing features
-        CPC_features = CPC_feature_function(file_path)
+        try:
+            CPC_features = CPC_feature_function(file_path)
+        except Exception:
+            continue
 
         # Save the outputs
         file_name = os.path.splitext(os.path.basename(file_path))[0]
@@ -143,14 +151,11 @@ def main(argv):
             torch.save(CPC_features, file_out)
         else:
             file_out = os.path.join(args.pathOutputDir, file_name  + ".txt")
-            np.savetxt(file_out, CPC_features)
+            # np.savetxt(file_out, CPC_features)
+            np.save(file_out, CPC_features)
     bar.finish()
-    print(f"...done {len(seqNames)} files in {time()-start_time} seconds.")
+    print(f"...done {len(seqNames)} files in {time()- start_time} seconds.")
 
 if __name__ == "__main__":
-    # import ptvsd
-    # ptvsd.enable_attach(('0.0.0.0', 7310))
-    # print("Attach debugger now")
-    # ptvsd.wait_for_attach()
     args = sys.argv[1:]
     main(args)
