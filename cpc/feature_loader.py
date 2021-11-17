@@ -27,7 +27,7 @@ class FeatureModule(torch.nn.Module):
         self.collapse = collapse
 
     def getDownsamplingFactor(self):
-        return self.featureMaker.gEncoder.DOWNSAMPLING
+        return self.featureMaker.cpc.gEncoder.DOWNSAMPLING if isinstance(self.featureMaker, CPCModelNullspace) else self.featureMaker.gEncoder.DOWNSAMPLING
 
     def forward(self, data):
 
@@ -364,8 +364,8 @@ def buildFeature_batch(featureMaker, seqPath, strict=False,
             batch_out = featureMaker((batch_seqs, None))
             for features in batch_out:
                 features = features.unsqueeze(0)
-                if seqNorm:
-                    features = seqNormalization(features)
+                # if seqNorm:
+                    # features = seqNormalization(features)
                 out.append(features.detach().cpu())
         
     # Remaining frames
@@ -375,17 +375,19 @@ def buildFeature_batch(featureMaker, seqPath, strict=False,
             subseq = (seq[:, -maxSizeSeq:]).view(1, 1, -1).to(device)
             with torch.no_grad():
                 features = featureMaker((subseq, None))
-                if seqNorm:
-                    features = seqNormalization(features)
+                # if seqNorm:
+                    # features = seqNormalization(features)
             delta = remainders // featureMaker.getDownsamplingFactor()
             out.append(features[:, -delta:].detach().cpu())
         else:
             subseq = (seq[:, -remainders:]).view(1, 1, -1).to(device)
             with torch.no_grad():
                 features = featureMaker((subseq, None))
-                if seqNorm:
-                    features = seqNormalization(features)
+                # if seqNorm:
+                    # features = seqNormalization(features)
             out.append(features.detach().cpu())
             
     out = torch.cat(out, dim=1)
+    if seqNorm:
+        out = seqNormalization(out)
     return out

@@ -97,6 +97,9 @@ def parseArgs(argv):
                         'of feature across the time channel before '
                         'computing distances.')
 
+    parser.add_argument('--kmeansppInits', default=0, type=int,
+                        help='Number of init rounds using Scitki-learn K-Means++ initialization. If 0 uses dumb standard initialization')
+
     return parser.parse_args(argv)
 
 # some example with nullspace and normalization making dists cosine:
@@ -162,6 +165,9 @@ if __name__ == "__main__":
 
     nGPUs = torch.cuda.device_count()
     batchSize = args.batchSizeGPU * nGPUs
+    
+    # samplingType = "samespeaker" if args.seqNorm else "uniform" 
+    # print(f"Using {samplingType} sampling")
     trainLoader = dataset.getDataLoader(batchSize, "uniform",
                                         False, numWorkers=0)
     print(f"Length of dataLoader: {len(trainLoader)}")
@@ -203,7 +209,8 @@ if __name__ == "__main__":
                             save_dir=os.path.dirname(args.pathOutput),
                             save_last=args.save_last,
                             norm_vec_len=args.norm_vec_len,
-                            seqNorm=args.seqNorm).cpu()
+                            seqNorm=args.seqNorm,
+                            kmeanspp=args.kmeansppInits).cpu()
 
 
     print(f'Ran clustering '

@@ -68,7 +68,9 @@ def train_step(feature_maker, criterion, data_loader, optimizer, CPCLevel, label
     else:
         logs = {"Loss_train": 0}
     for step, fulldata in tqdm.tqdm(enumerate(data_loader)):
-
+        # print("Batch size: ", fulldata[0].size(0))
+        # if fulldata[0].size(0) != 16:
+            # continue
         optimizer.zero_grad()
         batch_data, label_data = fulldata
         label = label_data[label_key]
@@ -113,6 +115,8 @@ def val_step(feature_maker, criterion, data_loader, CPCLevel, computeAccuracy, l
     else:
         logs = {"Loss_val": 0}
     for step, fulldata in tqdm.tqdm(enumerate(data_loader)):
+        # if fulldata[0].size(0) != 16:
+            # continue
         with torch.no_grad():
             batch_data, label_data = fulldata
             label = label_data[label_key]
@@ -366,6 +370,8 @@ def parse_args(argv):
     parser.add_argument('--pathPCA', type=str,
                         help="Path to the PCA matrices.")
     parser.add_argument('--seqNorm', action='store_true', help="Normalize across sequence dimension")
+    parser.add_argument('--samplingTypeTrain', type=str, default="uniform")
+    parser.add_argument('--samplingTypeVal', type=str, default="sequential")
 
     args = parser.parse_args(argv)
     if args.CPCLevel > 0:
@@ -526,10 +532,10 @@ def main(argv):
 
     batch_size = args.batchSizeGPU * args.nGPU
 
-    train_loader = db_train.getDataLoader(batch_size, "uniform", True,
+    train_loader = db_train.getDataLoader(batch_size, args.samplingTypeTrain, True,
                                           numWorkers=0)
 
-    val_loader = db_val.getDataLoader(batch_size, 'sequential', False,
+    val_loader = db_val.getDataLoader(batch_size, args.samplingTypeVal, False,
                                       numWorkers=0)
     print("Training dataset %d batches, Validation dataset %d batches, batch size %d" %
                 (len(train_loader), len(val_loader), batch_size))

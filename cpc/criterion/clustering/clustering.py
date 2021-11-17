@@ -67,7 +67,7 @@ def kMeanGPU(dataLoader, featureMaker, k, n_group=1,
              MAX_ITER=100, EPSILON=1e-4,
              perIterSize=-1, start_clusters=None,
              save=False, load=False, save_dir=None,
-             save_last=5, norm_vec_len=False, seqNorm=False):
+             save_last=5, norm_vec_len=False, seqNorm=False, kmeanspp=0):
 
     print(f"Start Kmean clustering with {k} clusters and {n_group} groups...")
 
@@ -93,8 +93,13 @@ def kMeanGPU(dataLoader, featureMaker, k, n_group=1,
                         break
             Ck = torch.cat(Ck, dim=0)
             N, D = Ck.size()
-            indexes = torch.randperm(N)[:k]
-            Ck = Ck[indexes].view(k, D)  #(1, k, D)
+            if kmeanspp:
+                from sklearn.cluster import KMeans
+                kmeans = KMeans(n_clusters=k, init='k-means++', random_state=0, n_init=kmeanspp, max_iter=1, verbose=1).fit(Ck.cpu().numpy())
+                Ck = torch.from_numpy(kmeans.cluster_centers_).cuda()
+            else:                
+                indexes = torch.randperm(N)[:k]
+                Ck = Ck[indexes].view(k, D)  #(1, k, D)
             # centers will be normalized from the very beginning and kept like that, later only norm points (AND re-normalize centers after each epoch-iter)
             if norm_vec_len:
                 CkLengths = torch.sqrt((Ck*Ck).sum(1))
@@ -125,7 +130,10 @@ def kMeanGPU(dataLoader, featureMaker, k, n_group=1,
             nItemsClusters = torch.zeros(Ck.size(1),
                                          dtype=torch.long).cuda()
             for index, data in enumerate(dataLoader):
-                cFeature = featureMaker(data).contiguous().view(-1, 1, D)
+                cFeature = featureMaker(data)
+                if seqNorm:
+                    cFeature = seqNormalization(cFeature)
+                cFeature = cFeature.contiguous().view(-1, 1, D)
                 locC, locN = clusterStep(cFeature)
                 Ck1 += locC.sum(dim=0, keepdim=True)
                 nItemsClusters += locN.sum(dim=0)

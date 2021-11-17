@@ -433,8 +433,8 @@ class CPCModelNullspace(nn.Module):
         self.cpc = cpc
         self.nullspace = nn.Linear(nullspace.shape[0], nullspace.shape[1], bias=False)
         self.nullspace.weight = nn.Parameter(nullspace.T)
-        self.gEncoder = self.cpc.gEncoder
-        self.gAR = self.cpc.gAR
+        # self.gEncoder = self.cpc.gEncoder
+        # self.gAR = self.cpc.gAR
 
 
     def forward(self, batchData, label):
