@@ -11,6 +11,7 @@ from os.path import join, exists
 from os import remove
 from time import time
 from cpc.feature_loader import seqNormalization
+import multiprocessing
 
 
 class kMeanCluster(nn.Module):
@@ -94,8 +95,9 @@ def kMeanGPU(dataLoader, featureMaker, k, n_group=1,
             Ck = torch.cat(Ck, dim=0)
             N, D = Ck.size()
             if kmeanspp:
-                from sklearn.cluster import KMeans
-                kmeans = KMeans(n_clusters=k, init='k-means++', random_state=0, n_init=kmeanspp, max_iter=1, verbose=1).fit(Ck.cpu().numpy())
+                from sklearn.cluster import MiniBatchKMeans
+                kmeans = MiniBatchKMeans(n_clusters=k, init='k-means++', random_state=0, n_init=kmeanspp, max_iter=1, 
+                                         verbose=1, batch_size=2 * 256 * multiprocessing.cpu_count()).fit(Ck.cpu().numpy())
                 Ck = torch.from_numpy(kmeans.cluster_centers_).cuda()
             else:                
                 indexes = torch.randperm(N)[:k]
