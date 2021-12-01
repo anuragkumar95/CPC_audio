@@ -425,8 +425,9 @@ class SameSpeakerSampler(Sampler):
 
 def extractLength(couple):
     speaker, locPath = couple
-    info = torchaudio.info(str(locPath))[0]
-    return info.length
+    #info = torchaudio.info(str(locPath))[0]
+    info = torchaudio.info(str(locPath))
+    return info.num_frames
 
 
 def findAllSeqs(dirName,
