@@ -438,6 +438,8 @@ def convert_to_wav(fin, fout):
     """
     Reads the file from fin and saves the file in wav format in fout
     """
+    print("Running")
+    print("FIN:", fin, "FOUT:", fout)
     temp = subprocess.run(["ffmpeg",
                            "-i", 
                            fin, 
