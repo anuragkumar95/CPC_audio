@@ -446,6 +446,8 @@ def convert_to_wav(fin, fout):
                            fout], 
                            stdout=subprocess.PIPE, 
                            stderr=subprocess.PIPE)
+    print(temp.stderr)
+    print(temp.stdout)
     
 
 def extractLength(couple):
