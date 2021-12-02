@@ -287,8 +287,8 @@ def loadFile(data):
     # with torch.multiprocessing we use soundfile to load the data
     ### Write code here for unzipping files and read them after #####
     #unzip_file(fullPath)
+    ### check what is fullpath and actual file name ###
     
-    ###check what is fullpath and actual file name###
     seq = torch.tensor(sf.read(str(fullPath))[0]).float()
     if len(seq.size()) == 2:
         seq = seq.mean(dim=1)

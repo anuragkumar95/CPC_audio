@@ -433,7 +433,7 @@ def main(args):
     seqNames, speakers = findAllSeqs(args.pathDB,
                                      extension=args.file_extension,
                                      loadCache=not args.ignore_cache,
-                                     speaker_level=0)
+                                     speaker_level=1)
 
     if not args.onlyCapture or args.only_classif_metric:
         print(f'Found files: {len(seqNames)} seqs, {len(speakers)} speakers')
