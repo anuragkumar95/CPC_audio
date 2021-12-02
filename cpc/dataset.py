@@ -289,7 +289,7 @@ def loadFile(data):
     unzip_file(fullPath)
     ### check what is fullpath and actual file name ###
 
-    seq = torch.tensor(sf.read(str(fullPath[:-4]))[0]).float()
+    seq = torch.tensor(sf.read(str(fullPath[:-4]+'.mp4'))[0]).float()
     if len(seq.size()) == 2:
         seq = seq.mean(dim=1)
     return speaker, seqName, seq
@@ -439,7 +439,7 @@ def extractLength(couple):
     print(locPath, speaker)
     unzip_file(str(locPath))
     #info = torchaudio.info(str(locPath))[0]
-    info = torchaudio.info(str(locPath))
+    info = torchaudio.info(str(locPath)[:-4]+'.mp4')
     return info.num_frames
 
 
