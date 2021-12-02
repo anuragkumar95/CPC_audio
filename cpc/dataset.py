@@ -14,7 +14,7 @@ from torch.multiprocessing import Pool
 from multiprocessing import dummy
 from torch.utils.data import Dataset, DataLoader
 from torch.utils.data.sampler import Sampler, BatchSampler
-
+import zipfile
 import torchaudio
 
 
@@ -271,13 +271,24 @@ class AudioBatchData(Dataset):
         return AudioLoader(self, samplerCall, nLoops, self.loadNextPack,
                            totSize, numWorkers)
 
+def unzip_file(filepath):
+    """
+    Unzips file and stores it in the same directory
+    """
+    with zipfile.ZipFile(filepath, 'r') as fp:
+        fp.extractall()
+
 
 def loadFile(data):
     speaker, fullPath = data
     seqName = fullPath.stem
-
+    print(speaker, seqName, fullPath)
     # Due to some issues happening when combining torchaudio.load
     # with torch.multiprocessing we use soundfile to load the data
+    ### Write code here for unzipping files and read them after #####
+    #unzip_file(fullPath)
+    
+    ###check what is fullpath and actual file name###
     seq = torch.tensor(sf.read(str(fullPath))[0]).float()
     if len(seq.size()) == 2:
         seq = seq.mean(dim=1)
