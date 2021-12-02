@@ -7,6 +7,7 @@ import random
 import time
 import tqdm
 import torch
+import subprocess
 import soundfile as sf
 from pathlib import Path
 from copy import deepcopy
@@ -433,13 +434,25 @@ class SameSpeakerSampler(Sampler):
         random.shuffle(self.batches)
         return iter(self.batches)
 
+def convert_to_wav(fin, fout):
+    """
+    Reads the file from fin and saves the file in wav format in fout
+    """
+    temp = subprocess.run(["ffmpeg",
+                           "-i", 
+                           fin, 
+                           fout], 
+                           stdout=subprocess.PIPE, 
+                           stderr=subprocess.PIPE)
+    
 
 def extractLength(couple):
     speaker, locPath = couple
-    print(locPath, speaker)
     unzip_file(str(locPath))
+    convert_to_wav(fin=str(locPath)[:-4]+'.mp4', 
+                   fout=str(locPath)[:-4]+'.wav')
     #info = torchaudio.info(str(locPath))[0]
-    info = torchaudio.info(str(locPath)[:-4]+'.mp4')
+    info = torchaudio.info(str(locPath)[:-4]+'.wav')
     return info.num_frames
 
 
