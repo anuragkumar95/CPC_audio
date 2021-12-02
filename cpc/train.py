@@ -339,7 +339,7 @@ def run(trainDataset,
         if captureDataset is not None and epoch % captureEachEpochs == 0:
             print(f"Capturing data for epoch {epoch}")
             captureStep(captureLoader, cpcModel, cpcCriterion, captureOptions, captureStatsCollector, epoch)
-
+        print('KEYS:',locLogsVal.keys())
         currentAccuracy = float(locLogsVal["locAcc_val"].mean())
         if currentAccuracy > bestAcc:
             bestStateDict = deepcopy(fl.get_module(cpcModel).state_dict())  
