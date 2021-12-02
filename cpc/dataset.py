@@ -437,7 +437,7 @@ class SameSpeakerSampler(Sampler):
 def extractLength(couple):
     speaker, locPath = couple
     print(locPath, speaker)
-    unzip_file(locPath)
+    unzip_file(str(locPath))
     #info = torchaudio.info(str(locPath))[0]
     info = torchaudio.info(str(locPath))
     return info.num_frames
