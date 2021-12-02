@@ -276,7 +276,7 @@ def unzip_file(filepath):
     Unzips file and stores it in the same directory
     """
     with zipfile.ZipFile(filepath, 'r') as fp:
-        fp.extractall(filepath[:-4])
+        fp.extractall(filepath[:-4]+'.mp4')
 
 
 def loadFile(data):
