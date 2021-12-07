@@ -36,7 +36,7 @@ def run_function(pid, files, args, start, end):
             
 
 def main(args):
-    files = [file for file in os.listdir(args.res_dir) if 'm4a' in file]
+    files = [file for file in os.listdir(args.data_dir) if 'm4a' in file]
     pool = Pool(processes=args.num_process, initargs=(RLock(), ), initializer=tqdm.set_lock)
     processes = []
     num_files = len(files)
