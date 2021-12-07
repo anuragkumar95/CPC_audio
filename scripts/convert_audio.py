@@ -23,6 +23,7 @@ def run_function(pid, files, args, start, end):
     tqdm_text = "#"+"{}".format(pid).zfill(3)
     with tqdm(total=end-start, desc=tqdm_text, position=pid+1) as pbar:
         for audio in files[start:end]:
+            pbar.update(1)
             audio_name, extn = audio.split('.')
             print(audio, audio_name, extn)
             if extn != 'm4a':
@@ -32,7 +33,7 @@ def run_function(pid, files, args, start, end):
             inp_audio = args.data_dir + "/" + audio
             out_audio = args.res_dir + "/" + audio_name + "." + args.extn
             #convert_audio(inp_audio, out_audio)
-            pbar.update(1)
+            
 
 def main(args):
     files = os.listdir(args.res_dir)
