@@ -32,7 +32,7 @@ def run_function(pid, files, args, start, end):
             inp_audio = args.data_dir + "/" + audio
             out_audio = args.res_dir + "/" + audio_name + "." + args.extn
             #convert_audio(inp_audio, out_audio)
-        pbar.update(1)
+            pbar.update(1)
 
 def main(args):
     files = os.listdir(args.res_dir)
