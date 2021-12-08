@@ -29,8 +29,8 @@ def run_function(pid, files, args, start, end):
                 continue
             inp_audio = args.data_dir + "/" + audio
             out_audio = args.res_dir + "/" + audio_name + "." + args.extn
-            print(inp_audio, out_audio)
-            #convert_audio(inp_audio, out_audio)
+            #print(inp_audio, out_audio)
+            convert_audio(inp_audio, out_audio)
             
 
 def main(args):
