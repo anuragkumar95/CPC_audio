@@ -25,8 +25,6 @@ def run_function(pid, files, args, start, end):
         for audio in files[start:end]:
             pbar.update(1)
             audio_name, extn = audio.split('.')
-            if extn != 'm4a':
-                continue 
             if audio_name+'.'+args.extn in os.listdir(args.res_dir):
                 continue
             inp_audio = args.data_dir + "/" + audio
