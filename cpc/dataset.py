@@ -456,7 +456,7 @@ def extractLength(couple):
     #convert_to_wav(fin=str(locPath)[:-4]+'.mp4', 
     #               fout=str(locPath)[:-4]+'.wav')
     #info = torchaudio.info(str(locPath))[0]
-    info = torchaudio.info(str(locPath)[:-4]+'.wav')
+    info = torchaudio.info(str(locPath))
     return info.num_frames
 
 
