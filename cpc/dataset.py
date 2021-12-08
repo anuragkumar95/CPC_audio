@@ -287,7 +287,7 @@ def loadFile(data):
     # Due to some issues happening when combining torchaudio.load
     # with torch.multiprocessing we use soundfile to load the data
     ### Write code here for unzipping files and read them after #####
-    unzip_file(fullPath)
+    #unzip_file(fullPath)
     ### check what is fullpath and actual file name ###
 
     seq = torch.tensor(sf.read(str(fullPath[:-4]+'.mp4'))[0]).float()

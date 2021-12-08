@@ -4,7 +4,7 @@ from tqdm import tqdm
 import argparse
 from multiprocessing import Pool, Manager, Process, RLock
 
-def convert_audio(fin, fout):
+def convert_audio(fin, fout):b  
     """
     Reads the file from fin and saves the file in any format in fout
     """
