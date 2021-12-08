@@ -452,9 +452,9 @@ def convert_to_wav(fin, fout):
 
 def extractLength(couple):
     speaker, locPath = couple
-    unzip_file(str(locPath))
-    convert_to_wav(fin=str(locPath)[:-4]+'.mp4', 
-                   fout=str(locPath)[:-4]+'.wav')
+    #unzip_file(str(locPath))
+    #convert_to_wav(fin=str(locPath)[:-4]+'.mp4', 
+    #               fout=str(locPath)[:-4]+'.wav')
     #info = torchaudio.info(str(locPath))[0]
     info = torchaudio.info(str(locPath)[:-4]+'.wav')
     return info.num_frames
