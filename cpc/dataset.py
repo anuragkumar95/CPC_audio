@@ -290,7 +290,7 @@ def loadFile(data):
     #unzip_file(fullPath)
     ### check what is fullpath and actual file name ###
 
-    seq = torch.tensor(sf.read(str(fullPath[:-4]+'.mp4'))[0]).float()
+    seq = torch.tensor(sf.read(str(fullPath))[0]).float()
     if len(seq.size()) == 2:
         seq = seq.mean(dim=1)
     return speaker, seqName, seq
