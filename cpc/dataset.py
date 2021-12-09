@@ -17,7 +17,7 @@ from torch.utils.data import Dataset, DataLoader
 from torch.utils.data.sampler import Sampler, BatchSampler
 import zipfile
 import torchaudio
-import librosa
+#import librosa
 
 
 class AudioBatchData(Dataset):
