@@ -293,8 +293,8 @@ def loadFile(data):
     import warnings
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        #seq = torch.tensor(sf.read(str(fullPath))[0]).float()
-        seq = torch.tensor(librosa.load(str(fullPath))[0]).float()
+        seq = torch.tensor(sf.read(str(fullPath))[0]).float()
+        #seq = torch.tensor(librosa.load(str(fullPath))[0]).float()
         if len(seq.size()) == 2:
             seq = seq.mean(dim=1)
         return speaker, seqName, seq
