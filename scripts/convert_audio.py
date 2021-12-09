@@ -34,7 +34,9 @@ def run_function(pid, files, args, start, end):
             
 
 def main(args):
-    files = os.listdir(args.data_dir)
+    files = [file for file in os.listdir(args.data_dir) if 
+                file.split('.')[0]+'.'+args.extn not in os.listdir(args.res_dir)]
+
     pool = Pool(processes=args.num_process, initargs=(RLock(), ), initializer=tqdm.set_lock)
     processes = []
     num_files = len(files)
