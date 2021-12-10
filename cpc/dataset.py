@@ -284,7 +284,7 @@ def unzip_file(filepath):
 def loadFile(data):
     speaker, fullPath = data
     seqName = fullPath.stem
-    print(speaker, seqName, fullPath)
+    #print(speaker, seqName, fullPath)
     # Due to some issues happening when combining torchaudio.load
     # with torch.multiprocessing we use soundfile to load the data
     ### Write code here for unzipping files and read them after #####
