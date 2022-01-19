@@ -105,7 +105,6 @@ def main(argv):
     # Define CPC_feature_function
     def CPC_feature_function(x): 
         cpu = True if args.cpu else False
-        print("CPU:",cpu)
         CPC_features = buildFeature(featureMaker, x,
                                     seqNorm=args.seq_norm,
                                     strict=args.strict,
