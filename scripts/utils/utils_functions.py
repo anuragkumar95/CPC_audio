@@ -19,7 +19,7 @@ def writeArgs(pathArgs, args):
     with open(pathArgs, 'w') as file:
         json.dump(vars(args), file, indent=2)
 
-def loadCPCFeatureMaker(pathCheckpoint, gru_level=-1, get_encoded=False, keep_hidden=True, load_nullspace=False):
+def loadCPCFeatureMaker(pathCheckpoint, gru_level=-1, get_encoded=False, keep_hidden=True, load_nullspace=False, cpu=False):
     """
     Load CPC Feature Maker from CPC checkpoint file.
     """
@@ -39,7 +39,7 @@ def loadCPCFeatureMaker(pathCheckpoint, gru_level=-1, get_encoded=False, keep_hi
         model.gAR.keepHidden = keep_hidden
 
     # Build CPC Feature Maker from CPC model
-    featureMaker = FeatureModule(model, get_encoded=get_encoded)
+    featureMaker = FeatureModule(model, get_encoded=get_encoded, cpu=cpu)
 
     return featureMaker
 

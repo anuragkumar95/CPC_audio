@@ -90,11 +90,13 @@ def main(argv):
     # Load CPC feature maker
     print("")
     print(f"Loading CPC featureMaker from {args.pathCPCCheckpoint}")
+    cpu = True if args.cpu else False
     featureMaker = loadCPCFeatureMaker(
         args.pathCPCCheckpoint, 
         gru_level = args.gru_level, 
         get_encoded = args.get_encoded, 
-        keep_hidden = True)
+        keep_hidden = True,
+        cpc = cpu)
     featureMaker.eval()
     if not args.cpu:
         featureMaker.cuda()

@@ -18,11 +18,12 @@ class FeatureModule(torch.nn.Module):
     working with CPC trained features.
     """
 
-    def __init__(self, featureMaker, get_encoded, collapse=False):
+    def __init__(self, featureMaker, get_encoded, collapse=False, cpu=False):
         super(FeatureModule, self).__init__()
         self.get_encoded = get_encoded
         self.featureMaker = featureMaker
         self.collapse = collapse
+        self.cpu = cpu
 
     def getDownsamplingFactor(self):
         return self.featureMaker.gEncoder.DOWNSAMPLING
@@ -30,7 +31,9 @@ class FeatureModule(torch.nn.Module):
     def forward(self, data):
 
         batchAudio, label = data
-        cFeature, encoded, _ = self.featureMaker(batchAudio.cuda(), label)
+        if not self.cpu:
+            batchAudio = batchAudio.cuda()
+        cFeature, encoded, _ = self.featureMaker(batchAudio, label)
         if self.get_encoded:
             cFeature = encoded
         if self.collapse:
