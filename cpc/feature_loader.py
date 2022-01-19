@@ -276,6 +276,7 @@ def buildFeature(featureMaker, seqPath, strict=False,
     Return:
         a torch vector of size 1 x Seq_size x Feature_dim
     """
+    print("CPU-FL:", cpu)
     seq = torchaudio.load(seqPath)[0]
     sizeSeq = seq.size(1)
     start = 0
