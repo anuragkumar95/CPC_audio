@@ -96,7 +96,7 @@ def main(argv):
         gru_level = args.gru_level, 
         get_encoded = args.get_encoded, 
         keep_hidden = True,
-        cpc = cpu)
+        cpu = cpu)
     featureMaker.eval()
     if not args.cpu:
         featureMaker.cuda()
