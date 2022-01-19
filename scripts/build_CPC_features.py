@@ -105,7 +105,8 @@ def main(argv):
         CPC_features = buildFeature(featureMaker, x,
                                     seqNorm=args.seq_norm,
                                     strict=args.strict,
-                                    maxSizeSeq=args.max_size_seq)
+                                    maxSizeSeq=args.max_size_seq,
+                                    cpu = args.cpu)
         return CPC_features.squeeze(0).float().cpu().numpy()
 
     # Building features

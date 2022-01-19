@@ -262,7 +262,7 @@ def seqNormalization(out):
 
 
 def buildFeature(featureMaker, seqPath, strict=False,
-                 maxSizeSeq=64000, seqNorm=False):
+                 maxSizeSeq=64000, seqNorm=False, cpu=False):
     r"""
     Apply the featureMaker to the given file.
     Arguments:
@@ -284,7 +284,9 @@ def buildFeature(featureMaker, seqPath, strict=False,
         if strict and start + maxSizeSeq > sizeSeq:
             break
         end = min(sizeSeq, start + maxSizeSeq)
-        subseq = (seq[:, start:end]).view(1, 1, -1).cuda(device=0)
+        subseq = (seq[:, start:end]).view(1, 1, -1)
+        if not cpu:
+            subseq = subseq.cuda(device=0)
         with torch.no_grad():
             features = featureMaker((subseq, None))
             if seqNorm:
@@ -293,7 +295,9 @@ def buildFeature(featureMaker, seqPath, strict=False,
         start += maxSizeSeq
 
     if strict and start < sizeSeq:
-        subseq = (seq[:, -maxSizeSeq:]).view(1, 1, -1).cuda(device=0)
+        subseq = (seq[:, -maxSizeSeq:]).view(1, 1, -1)
+        if not cpu:
+            subseq = subseq.cuda(device=0)
         with torch.no_grad():
             features = featureMaker((subseq, None))
             if seqNorm:
