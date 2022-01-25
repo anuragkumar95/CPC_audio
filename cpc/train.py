@@ -657,9 +657,9 @@ def main(args):
     cpcCriterion = torch.nn.DataParallel(cpcCriterion,
                                          device_ids=range(args.nGPU)).cuda()
     '''
-    cpcModel = torch.nn.DistributedDataParallel(cpcModel,
+    cpcModel = torch.nn.parallel.DistributedDataParallel(cpcModel,
                                      device_ids=range(args.nGPU)).cuda()
-    cpcCriterion = torch.nn.DistributedDataParallel(cpcCriterion,
+    cpcCriterion = torch.nn.parallel.DistributedDataParallel(cpcCriterion,
                                          device_ids=range(args.nGPU)).cuda()
     
     if args.supervised_classif_metric:
@@ -690,7 +690,8 @@ def main(args):
                                                     nPhonesInData, args.phone_get_encoded,
                                                     nLayers=args.linsep_net_layers)
                 phone_criterion.cuda()
-                phone_criterion = torch.nn.DataParallel(phone_criterion, device_ids=range(args.nGPU))
+                #phone_criterion = torch.nn.DataParallel(phone_criterion, device_ids=range(args.nGPU))
+                phone_criterion = torch.nn.parallel.DistributedDataParallel(phone_criterion, device_ids=range(args.nGPU))
 
                 # Optimizer
                 phone_g_params = list(phone_criterion.parameters())
@@ -709,7 +710,7 @@ def main(args):
                                                         nLayers=args.linsep_net_layers)
                 speaker_criterion.cuda()
                 #speaker_criterion = torch.nn.DataParallel(speaker_criterion, device_ids=range(args.nGPU))
-                speaker_criterion = torch.nn.DistributedDataParallel(speaker_criterion, device_ids=range(args.nGPU))
+                speaker_criterion = torch.nn.parallel.DistributedDataParallel(speaker_criterion, device_ids=range(args.nGPU))
 
                 speaker_g_params = list(speaker_criterion.parameters())
 
