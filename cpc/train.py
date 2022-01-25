@@ -651,10 +651,15 @@ def main(args):
 
     print("cpcModel", cpcModel)
     print("cpcCriterion", cpcCriterion)
-
+    '''
     cpcModel = torch.nn.DataParallel(cpcModel,
                                      device_ids=range(args.nGPU)).cuda()
     cpcCriterion = torch.nn.DataParallel(cpcCriterion,
+                                         device_ids=range(args.nGPU)).cuda()
+    '''
+    cpcModel = torch.nn.DistributedDataParallel(cpcModel,
+                                     device_ids=range(args.nGPU)).cuda()
+    cpcCriterion = torch.nn.DistributedDataParallel(cpcCriterion,
                                          device_ids=range(args.nGPU)).cuda()
     
     if args.supervised_classif_metric:
@@ -703,7 +708,8 @@ def main(args):
                 speaker_criterion = cr.SpeakerCriterion(dim_ctx_features, len(speakers),
                                                         nLayers=args.linsep_net_layers)
                 speaker_criterion.cuda()
-                speaker_criterion = torch.nn.DataParallel(speaker_criterion, device_ids=range(args.nGPU))
+                #speaker_criterion = torch.nn.DataParallel(speaker_criterion, device_ids=range(args.nGPU))
+                speaker_criterion = torch.nn.DistributedDataParallel(speaker_criterion, device_ids=range(args.nGPU))
 
                 speaker_g_params = list(speaker_criterion.parameters())
 
