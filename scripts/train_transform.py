@@ -10,6 +10,17 @@ import numpy as np
 from scipy.linalg import eigh
 from scipy.sparse import coo_matrix
 
+def read_vectors_from_txt_file(path_to_files):
+    """ Read vectors in text format from path_to_files.
+
+        Yields:
+            Tuple(str, np.array): utt and vector
+    """
+    ret_val = {}
+    for file in os.listdir(path_to_files):
+        feats = np.loadtxt(os.path.join(path_to_files, file))
+        ret_val[file.split('.')[0]] = feats
+    return ret_val
 
 def read_txt_vectors_from_stdin():
     """ Read vectors in text format. This code expects correct format.
@@ -131,6 +142,7 @@ def train(embeddings, labels, lda_dim, whiten):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--utt2spk', required=True, type=str, help='path to spk2utt')
+    parser.add_argument('--outputs', required=False, type=str, help='path to embeddings stored in text format')
     parser.add_argument('--output-h5', required=True, type=str, help='path to output h5 file')
     parser.add_argument('--lda-dim', required=False, default=128, type=int, help='LDA dimensionality')
     parser.add_argument('--whiten', required=False, default=False, action='store_true', help='do whitenning after LDA')
@@ -142,15 +154,23 @@ if __name__ == '__main__':
         for line in f:
             utt, spk = line.split()
             utt2spk[utt] = spk
+    
     embeddings, labels, utts = [], [], []
-    for utt, emb in read_txt_vectors_from_stdin():
-        try:
-            labels.append(utt2spk[utt])
+    
+    if not args.outputs:   
+        for utt, emb in read_txt_vectors_from_stdin():
+            try:
+                labels.append(utt2spk[utt])
+                utts.append(utt)
+                embeddings.append(emb)
+            except KeyError:
+                pass
+    else:
+        utt2feats = read_vectors_from_txt_file(args.outputs)
+        for utt in utt2feats:
+            embeddings.append(utt2feats[utt])
             utts.append(utt)
-            embeddings.append(emb)
-        except KeyError:
-            pass
-
+            labels.append(utt2spk[utt])
     # train parameters
     embeddings, mean1, lda, mean2 = train(np.array(embeddings), labels, lda_dim=args.lda_dim, whiten=args.whiten)
 
