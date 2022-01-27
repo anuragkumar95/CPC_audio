@@ -2,8 +2,10 @@
 # -*- coding: utf-8 -*-
 
 import argparse
+from logging import raiseExceptions
 import os
 import sys
+import tqdm
 
 import h5py
 import numpy as np
@@ -17,7 +19,11 @@ def read_vectors_from_txt_file(path_to_files):
             Tuple(str, np.array): utt and vector
     """
     ret_val = {}
-    for file in os.listdir(path_to_files):
+    print("Reading input embeddings.")
+    for file in tqdm.tqdm(os.listdir(path_to_files)):
+        if file.split('.')[-1] != 'txt':
+            raiseExceptions("Files need to be in txt format.")
+            continue
         feats = np.loadtxt(os.path.join(path_to_files, file))
         ret_val[file.split('.')[0]] = feats
     return ret_val
@@ -168,9 +174,12 @@ if __name__ == '__main__':
     else:
         utt2feats = read_vectors_from_txt_file(args.outputs)
         for utt in utt2feats:
-            embeddings.append(utt2feats[utt])
-            utts.append(utt)
-            labels.append(utt2spk[utt])
+            try:
+                embeddings.append(utt2feats[utt])
+                utts.append(utt)
+                labels.append(utt2spk[utt])
+            except KeyError:
+                continue
     # train parameters
     embeddings, mean1, lda, mean2 = train(np.array(embeddings), labels, lda_dim=args.lda_dim, whiten=args.whiten)
 
