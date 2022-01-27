@@ -20,7 +20,7 @@ def read_vectors_from_txt_file(path_to_files):
     """
     ret_val = {}
     print("Reading input embeddings.")
-    for file in tqdm.tqdm(os.listdir(path_to_files)):
+    for file in tqdm.tqdm(os.listdir(path_to_files)[:5]):
         if file.split('.')[-1] != 'txt':
             raiseExceptions("Files need to be in txt format.")
             continue
@@ -173,7 +173,7 @@ if __name__ == '__main__':
                 pass
     else:
         utt2feats = read_vectors_from_txt_file(args.outputs)
-        for utt in utt2feats[:2]:
+        for utt in utt2feats:
             print(utt, utt in utt2spk, utt in utt2feats)
             labels.append(utt2spk[utt])
             embeddings.append(utt2feats[utt])
