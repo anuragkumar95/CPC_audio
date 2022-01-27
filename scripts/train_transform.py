@@ -174,9 +174,9 @@ if __name__ == '__main__':
     else:
         utt2feats = read_vectors_from_txt_file(args.outputs)
         for utt in utt2feats:
-            for frame in utt2feats[utt]:
-                labels.append(utt2spk[utt])
-                embeddings.append(frame)
+            labels.append(utt2spk[utt])
+            mean = np.mean(utt2feats[utt], axis=0)
+            embeddings.append(mean)
             utts.append(utt)   
     
     # train parameters
