@@ -152,6 +152,7 @@ if __name__ == '__main__':
     parser.add_argument('--output-h5', required=True, type=str, help='path to output h5 file')
     parser.add_argument('--lda-dim', required=False, default=128, type=int, help='LDA dimensionality')
     parser.add_argument('--whiten', required=False, default=False, action='store_true', help='do whitenning after LDA')
+    parser.add_argument('--mean', required=False, default=False, action='store_true', help='do LDA on mean of embeddings')
 
     args = parser.parse_args()
 
@@ -174,10 +175,16 @@ if __name__ == '__main__':
     else:
         utt2feats = read_vectors_from_txt_file(args.outputs)
         for utt in utt2feats:
-            labels.append(utt2spk[utt])
-            mean = np.mean(utt2feats[utt], axis=0)
-            embeddings.append(mean)
-            utts.append(utt)   
+            if args.mean:
+                labels.append(utt2spk[utt])
+                mean = np.mean(utt2feats[utt], axis=0)
+                embeddings.append(mean)
+                utts.append(utt) 
+            else:
+                for frame in utt2feats[utt]:
+                    labels.append(utt2spk[utt])
+                    embeddings.append(frame)
+                utts.append(utt)
     
     # train parameters
     embeddings, mean1, lda, mean2 = train(np.array(embeddings), labels, lda_dim=args.lda_dim, whiten=args.whiten)
