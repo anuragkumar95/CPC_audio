@@ -175,6 +175,7 @@ if __name__ == '__main__':
         utt2feats = read_vectors_from_txt_file(args.outputs)
         for utt in utt2feats:
             try:
+                print(utt, utt in utt2spk, utt2feats)
                 labels.append(utt2spk[utt])
                 embeddings.append(utt2feats[utt])
                 utts.append(utt)   
