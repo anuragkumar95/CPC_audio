@@ -20,7 +20,7 @@ def read_vectors_from_txt_file(path_to_files):
     """
     ret_val = {}
     print("Reading input embeddings.")
-    for file in tqdm.tqdm(os.listdir(path_to_files)[:5]):
+    for file in tqdm.tqdm(os.listdir(path_to_files)):
         if file.split('.')[-1] != 'txt':
             raiseExceptions("Files need to be in txt format.")
             continue
