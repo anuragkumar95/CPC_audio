@@ -25,7 +25,6 @@ def read_vectors_from_txt_file(path_to_files):
             raiseExceptions("Files need to be in txt format.")
             continue
         feats = np.loadtxt(os.path.join(path_to_files, file))
-        print(file, file.split('.')[-1])
         ret_val[file.split('.')[0]] = feats
     return ret_val
 
