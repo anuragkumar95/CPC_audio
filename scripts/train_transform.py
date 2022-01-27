@@ -25,6 +25,7 @@ def read_vectors_from_txt_file(path_to_files):
             raiseExceptions("Files need to be in txt format.")
             continue
         feats = np.loadtxt(os.path.join(path_to_files, file))
+        print(file, file.split('.')[-1])
         ret_val[file.split('.')[0]] = feats
     return ret_val
 
@@ -174,13 +175,10 @@ if __name__ == '__main__':
     else:
         utt2feats = read_vectors_from_txt_file(args.outputs)
         for utt in utt2feats:
-            try:
-                print(utt, utt in utt2spk, utt2feats)
-                labels.append(utt2spk[utt])
-                embeddings.append(utt2feats[utt])
-                utts.append(utt)   
-            except KeyError:
-                continue
+            print(utt, utt in utt2spk, utt in utt2feats)
+            labels.append(utt2spk[utt])
+            embeddings.append(utt2feats[utt])
+            utts.append(utt)   
     embeddings = np.row_stack(embeddings)
     # train parameters
     embeddings, mean1, lda, mean2 = train(embeddings, labels, lda_dim=args.lda_dim, whiten=args.whiten)
