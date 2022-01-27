@@ -178,9 +178,9 @@ if __name__ == '__main__':
             labels.append(utt2spk[utt])
             embeddings.append(utt2feats[utt])
             utts.append(utt)   
-    embeddings = np.row_stack(embeddings)
+    
     # train parameters
-    embeddings, mean1, lda, mean2 = train(embeddings, labels, lda_dim=args.lda_dim, whiten=args.whiten)
+    embeddings, mean1, lda, mean2 = train(np.array(embeddings), labels, lda_dim=args.lda_dim, whiten=args.whiten)
 
     # dump them into h5 file
     with h5py.File(args.output_h5, 'w') as f:
