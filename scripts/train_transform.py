@@ -117,7 +117,6 @@ def parse_align(alignment, path_to_files):
     """
     with open(alignment, "r") as f:
         lines = f.readlines()
-        print(f"Read file {alignment}")
         lines = [l.strip().split('|') for l in lines]
         spk_dur = {l[1]:[] for l in lines[1:]}
         i = 1
@@ -153,7 +152,6 @@ def parse_align(alignment, path_to_files):
                     continue
     
     file = alignment.split('/')[-1].split('.')[0] + '.txt'
-    print(file, path_to_files, os.path.join(path_to_files, file))
     feats = np.loadtxt(os.path.join(path_to_files, file))
     return feats, spk_2_indx
 
@@ -260,7 +258,6 @@ if __name__ == '__main__':
         for align in os.listdir(args.alignment):
             if 'normalized' in align:
                 continue
-            print(f"Reading file {align}")
             feats, spk2idx = parse_align(os.path.join(args.alignment, align), args.outputs)
             if feats == -1:
                 continue
