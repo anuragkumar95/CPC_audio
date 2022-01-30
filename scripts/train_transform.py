@@ -125,6 +125,7 @@ def parse_align(alignment, path_to_files):
             i+=1
         if i == len(lines):
             return -1, -1
+        print(i, lines[i])
         start = float(lines[1][2])
         end = 0
         for i, line in enumerate(lines[2:]):
