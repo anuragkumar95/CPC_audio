@@ -105,6 +105,52 @@ def classids_to_posteriors(classids, dtype='f4'):
     return class2post
 
 
+def parse_align(alignment, path_to_files):
+    """
+    Function to parse earnings21 alignment files.
+    Args: 
+        alignment: path to file which containes spk aligned reference. 
+        path_to_files: path to earnings21 wav files.
+    Returns:
+        features for the corresponding file.
+        dictionary for spk to feature index mapping. 
+    """
+    with open(alignment, "r") as f:
+        lines = f.readlines()
+        lines = [l.strip().split('|') for l in lines]
+        spk_dur = {l[1]:[] for l in lines[1:]}
+        cur_spk = lines[1][1]
+        start = float(lines[1][2])
+        end = 0
+        for i, line in enumerate(lines[2:]):
+            spk = line[1]
+            if spk != cur_spk:
+                if i > 0:
+                    spk_dur[cur_spk].append((start, end))
+                cur_spk = spk
+                start = line[2]
+                if len(start) > 0:
+                    start = float(start)
+            else:
+                end = line[3]
+                if len(end) > 0:
+                    end = float(end)
+        
+        spk_2_indx = {l[1]:[] for l in lines[1:]}
+        for spk in spk_dur:
+            for start, end in spk_dur[spk]:
+                try:
+                    start_idx = int(start*100)
+                    end_idx = int(end*100)
+                    spk_2_indx[spk].append((start_idx, end_idx))
+                except:
+                    continue
+    
+    file = alignment.split('.')[0] + '.wav'
+    feats = np.loadtxt(os.path.join(path_to_files, file))
+    return feats, spk_2_indx
+
+
 def train(embeddings, labels, lda_dim, whiten):
     n_vectors, vector_dim = embeddings.shape
 
@@ -152,47 +198,71 @@ if __name__ == '__main__':
     parser.add_argument('--lda-dim', required=False, default=128, type=int, help='LDA dimensionality')
     parser.add_argument('--whiten', required=False, default=False, action='store_true', help='do whitenning after LDA')
     parser.add_argument('--mean', required=False, default=False, action='store_true', help='do LDA on mean of embeddings')
-
+    parser.add_argument('--db', required=False, type=str, help='Argument to handle earnings21 data')
+    parser.add_argument('--alignment', required=False, type=str, help='Path to Earnings21 aligned files.')
+    parser.add_argument('--save', required=False, type=str, help='Path to save dir for LDA embeddings.')
+    
     args = parser.parse_args()
 
-    utt2spk = {}
-    with open(args.utt2spk) as f:
-        for line in f:
-            utt, spk = line.split()
-            utt2spk[utt] = spk
-    
-    embeddings, labels, utts = [], [], []
-    
-    if not args.outputs:   
-        for utt, emb in read_txt_vectors_from_stdin():
-            try:
-                labels.append(utt2spk[utt])
-                utts.append(utt)
-                embeddings.append(emb)
-            except KeyError:
-                pass
-    else:
-        utt2feats = read_vectors_from_txt_file(args.outputs)
-        for utt in utt2feats:
-            if args.mean:
-                labels.append(utt2spk[utt])
-                mean = np.mean(utt2feats[utt], axis=0)
-                embeddings.append(mean)
-                utts.append(utt) 
-            else:
-                for frame in utt2feats[utt]:
+    if args.db is None:
+        utt2spk = {}
+        with open(args.utt2spk) as f:
+            for line in f:
+                utt, spk = line.split()
+                utt2spk[utt] = spk
+        
+        embeddings, labels, utts = [], [], []
+        
+        if not args.outputs:   
+            for utt, emb in read_txt_vectors_from_stdin():
+                try:
                     labels.append(utt2spk[utt])
-                    embeddings.append(frame)
-                utts.append(utt)
+                    utts.append(utt)
+                    embeddings.append(emb)
+                except KeyError:
+                    pass
+        else:
+            utt2feats = read_vectors_from_txt_file(args.outputs)
+            for utt in utt2feats:
+                if args.mean:
+                    labels.append(utt2spk[utt])
+                    mean = np.mean(utt2feats[utt], axis=0)
+                    embeddings.append(mean)
+                    utts.append(utt) 
+                else:
+                    for frame in utt2feats[utt]:
+                        labels.append(utt2spk[utt])
+                        embeddings.append(frame)
+                    utts.append(utt)
+        
+        embeddings, mean1, lda, mean2 = train(np.array(embeddings), labels, lda_dim=args.lda_dim, whiten=args.whiten)
+
+        # dump them into h5 file
+        with h5py.File(args.output_h5, 'w') as f:
+            f.create_dataset('mean1', data=mean1)
+            f.create_dataset('mean2', data=mean2)
+            f.create_dataset('lda', data=lda)
+
+        for utt, embedding in zip(utts, embeddings):
+            write_txt_vector_to_stdout(utt, embedding)
+
+
+    if args.db == 'earnings21':
+        labels = []
+        embeddings = []
+        for align in os.listdir(args.alignment):
+            feats, spk2idx = parse_align(align, args.outputs)
+            for spk in spk2idx:
+                for start, end in spk2idx[spk]:
+                    if start < end:
+                        embedding = np.mean(feats[start:end], axis = 0)
+                        embeddings.append(embedding)
+                        labels.append(spk)
+
+            embeddings, mean1, lda, mean2 = train(np.array(embeddings), labels, lda_dim=args.lda_dim, whiten=args.whiten)
+            if args.save:
+                save_path = os.path.join(args.save, align.split('.')[0])
+                np.savetxt(save_path, embeddings)
     
     # train parameters
-    embeddings, mean1, lda, mean2 = train(np.array(embeddings), labels, lda_dim=args.lda_dim, whiten=args.whiten)
-
-    # dump them into h5 file
-    with h5py.File(args.output_h5, 'w') as f:
-        f.create_dataset('mean1', data=mean1)
-        f.create_dataset('mean2', data=mean2)
-        f.create_dataset('lda', data=lda)
-
-    for utt, embedding in zip(utts, embeddings):
-        write_txt_vector_to_stdout(utt, embedding)
+    
