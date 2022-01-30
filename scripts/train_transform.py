@@ -123,7 +123,7 @@ def parse_align(alignment, path_to_files):
         while(i < len(lines) and lines[i][2] == ''):
             i+=1
         if i == len(lines):
-            return -1, -1
+            return [], []
         cur_spk = lines[i][1]
         start = float(lines[i][2])
         end = 0
@@ -259,7 +259,7 @@ if __name__ == '__main__':
             if 'normalized' in align:
                 continue
             feats, spk2idx = parse_align(os.path.join(args.alignment, align), args.outputs)
-            if feats == -1:
+            if len(feats) == 0:
                 continue
             for spk in spk2idx:
                 for start, end in spk2idx[spk]:
