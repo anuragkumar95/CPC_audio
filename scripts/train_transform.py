@@ -251,6 +251,8 @@ if __name__ == '__main__':
         labels = []
         embeddings = []
         for align in os.listdir(args.alignment):
+            if 'normalized' in align:
+                continue
             feats, spk2idx = parse_align(align, args.outputs)
             for spk in spk2idx:
                 for start, end in spk2idx[spk]:
