@@ -123,10 +123,8 @@ def parse_align(alignment, path_to_files):
         i = 1
         while(i < len(lines) and lines[i][2] == ''):
             i+=1
-        print(i, lines[i])
         if i == len(lines):
             return -1, -1
-        print(i, lines[i])
         cur_spk = lines[i][1]
         start = float(lines[i][2])
         end = 0
@@ -154,7 +152,7 @@ def parse_align(alignment, path_to_files):
                 except:
                     continue
     
-    file = alignment.split('.')[0] + '.wav'
+    file = alignment.split('.')[0] + '.txt'
     feats = np.loadtxt(os.path.join(path_to_files, file))
     return feats, spk_2_indx
 
