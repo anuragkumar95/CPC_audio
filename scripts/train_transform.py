@@ -119,16 +119,16 @@ def parse_align(alignment, path_to_files):
         lines = f.readlines()
         lines = [l.strip().split('|') for l in lines]
         spk_dur = {l[1]:[] for l in lines[1:]}
-        cur_spk = lines[1][1]
         i = 1
-        while(i < len(lines) and lines[i][1] == ''):
+        while(i < len(lines) and lines[i][2] == ''):
             i+=1
         if i == len(lines):
             return -1, -1
         print(i, lines[i])
-        start = float(lines[1][2])
+        cur_spk = lines[i][1]
+        start = float(lines[i][2])
         end = 0
-        for i, line in enumerate(lines[2:]):
+        for i, line in enumerate(lines[i+1:]):
             spk = line[1]
             if spk != cur_spk:
                 if i > 0:
