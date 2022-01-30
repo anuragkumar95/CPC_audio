@@ -120,6 +120,7 @@ def parse_align(alignment, path_to_files):
         lines = [l.strip().split('|') for l in lines]
         spk_dur = {l[1]:[] for l in lines[1:]}
         cur_spk = lines[1][1]
+        print(lines[:3])
         start = float(lines[1][2])
         end = 0
         for i, line in enumerate(lines[2:]):
