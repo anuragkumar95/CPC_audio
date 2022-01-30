@@ -270,7 +270,7 @@ if __name__ == '__main__':
 
             embeddings, mean1, lda, mean2 = train(np.array(embeddings), labels, lda_dim=args.lda_dim, whiten=args.whiten)
             if args.save:
-                save_path = os.path.join(args.save, align.split('.')[0])
+                save_path = os.path.join(args.save, align.split('.')[0]+'.txt')
                 np.savetxt(save_path, embeddings)
     
     # train parameters
