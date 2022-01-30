@@ -123,6 +123,7 @@ def parse_align(alignment, path_to_files):
         i = 1
         while(i < len(lines) and lines[i][2] == ''):
             i+=1
+        print(i, lines[i])
         if i == len(lines):
             return -1, -1
         print(i, lines[i])
