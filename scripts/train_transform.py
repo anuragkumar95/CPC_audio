@@ -255,7 +255,7 @@ if __name__ == '__main__':
     if args.db == 'earnings21':
         labels = []
         embeddings = []
-        for align in os.listdir(args.alignment):
+        for align in tqdm.tqdm(os.listdir(args.alignment)):
             if 'normalized' in align:
                 continue
             feats, spk2idx = parse_align(os.path.join(args.alignment, align), args.outputs)
