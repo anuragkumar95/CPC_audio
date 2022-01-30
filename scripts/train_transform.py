@@ -153,6 +153,7 @@ def parse_align(alignment, path_to_files):
                     continue
     
     file = alignment.split('.')[0] + '.txt'
+    print(file, path_to_files)
     feats = np.loadtxt(os.path.join(path_to_files, file))
     return feats, spk_2_indx
 
