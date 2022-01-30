@@ -120,7 +120,11 @@ def parse_align(alignment, path_to_files):
         lines = [l.strip().split('|') for l in lines]
         spk_dur = {l[1]:[] for l in lines[1:]}
         cur_spk = lines[1][1]
-        print(lines[:3])
+        i = 1
+        while(i < len(lines) and lines[i][1] == ''):
+            i+=1
+        if i == len(lines):
+            return -1, -1
         start = float(lines[1][2])
         end = 0
         for i, line in enumerate(lines[2:]):
@@ -255,6 +259,8 @@ if __name__ == '__main__':
             if 'normalized' in align:
                 continue
             feats, spk2idx = parse_align(os.path.join(args.alignment, align), args.outputs)
+            if feats == -1:
+                continue
             for spk in spk2idx:
                 for start, end in spk2idx[spk]:
                     if start < end:
