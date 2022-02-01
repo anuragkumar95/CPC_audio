@@ -208,8 +208,24 @@ if __name__ == '__main__':
     parser.add_argument('--save', required=False, type=str, help='Path to save dir for LDA embeddings.')
     
     args = parser.parse_args()
+    
+    if args.db == 'earnings21':
+        for align in tqdm.tqdm(os.listdir(args.alignment)):
+            labels = []
+            embeddings = []
+            if 'normalized' in align:
+                continue
+            feats, spk2idx = parse_align(os.path.join(args.alignment, align), args.outputs)
+            if len(feats) == 0:
+                continue
+            for spk in spk2idx:
+                for start, end in spk2idx[spk]:
+                    if start < end:
+                        embedding = np.mean(feats[start:end], axis = 0)
+                        embeddings.append(embedding)
+                        labels.append(spk)
 
-    if args.db is None:
+    else:
         utt2spk = {}
         with open(args.utt2spk) as f:
             for line in f:
@@ -240,6 +256,7 @@ if __name__ == '__main__':
                     for i in ind:
                         embeddings.append(utt2feats[utt][i])
                         labels.append(utt2spk[utt])
+                    utts.append(utt)
                 else:
                     for frame in utt2feats[utt]:
                         labels.append(utt2spk[utt])
@@ -247,22 +264,6 @@ if __name__ == '__main__':
                     utts.append(utt)
         
         #embeddings, mean1, lda, mean2 = train(np.array(embeddings), labels, lda_dim=args.lda_dim, whiten=args.whiten)
-
-    if args.db == 'earnings21':
-        for align in tqdm.tqdm(os.listdir(args.alignment)):
-            labels = []
-            embeddings = []
-            if 'normalized' in align:
-                continue
-            feats, spk2idx = parse_align(os.path.join(args.alignment, align), args.outputs)
-            if len(feats) == 0:
-                continue
-            for spk in spk2idx:
-                for start, end in spk2idx[spk]:
-                    if start < end:
-                        embedding = np.mean(feats[start:end], axis = 0)
-                        embeddings.append(embedding)
-                        labels.append(spk)
 
     embeddings, mean1, lda, mean2 = train(np.array(embeddings), labels, lda_dim=args.lda_dim, whiten=args.whiten)
             
