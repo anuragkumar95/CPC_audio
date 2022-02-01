@@ -267,6 +267,8 @@ if __name__ == '__main__':
         f.create_dataset('lda', data=lda)
 
     if args.save:
+        if not os.path.isdir(args.save):
+            os.makedirs(args.save)
         save_path = os.path.join(args.save, align.split('.')[0]+'.txt')
         np.savetxt(save_path, embeddings)
     
