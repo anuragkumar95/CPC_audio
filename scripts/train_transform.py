@@ -240,17 +240,7 @@ if __name__ == '__main__':
                         embeddings.append(frame)
                     utts.append(utt)
         
-        embeddings, mean1, lda, mean2 = train(np.array(embeddings), labels, lda_dim=args.lda_dim, whiten=args.whiten)
-
-        # dump them into h5 file
-        with h5py.File(args.output_h5, 'w') as f:
-            f.create_dataset('mean1', data=mean1)
-            f.create_dataset('mean2', data=mean2)
-            f.create_dataset('lda', data=lda)
-
-        for utt, embedding in zip(utts, embeddings):
-            write_txt_vector_to_stdout(utt, embedding)
-
+        #embeddings, mean1, lda, mean2 = train(np.array(embeddings), labels, lda_dim=args.lda_dim, whiten=args.whiten)
 
     if args.db == 'earnings21':
         for align in tqdm.tqdm(os.listdir(args.alignment)):
@@ -268,10 +258,23 @@ if __name__ == '__main__':
                         embeddings.append(embedding)
                         labels.append(spk)
 
-            embeddings, mean1, lda, mean2 = train(np.array(embeddings), labels, lda_dim=args.lda_dim, whiten=args.whiten)
-            if args.save:
-                save_path = os.path.join(args.save, align.split('.')[0]+'.txt')
-                np.savetxt(save_path, embeddings)
+    embeddings, mean1, lda, mean2 = train(np.array(embeddings), labels, lda_dim=args.lda_dim, whiten=args.whiten)
+            
+    # dump them into h5 file
+    with h5py.File(args.output_h5, 'w') as f:
+        f.create_dataset('mean1', data=mean1)
+        f.create_dataset('mean2', data=mean2)
+        f.create_dataset('lda', data=lda)
+
+    if args.save:
+        save_path = os.path.join(args.save, align.split('.')[0]+'.txt')
+        np.savetxt(save_path, embeddings)
+    
+    else:
+        for utt, embedding in zip(utts, embeddings):
+            write_txt_vector_to_stdout(utt, embedding)
+    
+    
     
     # train parameters
     
