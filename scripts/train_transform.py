@@ -202,7 +202,7 @@ if __name__ == '__main__':
     parser.add_argument('--output-h5', required=True, type=str, help='path to output h5 file')
     parser.add_argument('--lda-dim', required=False, default=128, type=int, help='LDA dimensionality')
     parser.add_argument('--whiten', required=False, default=False, action='store_true', help='do whitenning after LDA')
-    parser.add_argument('--mean', required=False, default=False, action='store_true', help='do LDA on mean of embeddings')
+    parser.add_argument('--mode', required=False, default=None, help='do LDA on mean of embeddings or random embeddings.')
     parser.add_argument('--db', required=False, type=str, help='Argument to handle earnings21 data')
     parser.add_argument('--alignment', required=False, type=str, help='Path to Earnings21 aligned files.')
     parser.add_argument('--save', required=False, type=str, help='Path to save dir for LDA embeddings.')
@@ -229,11 +229,17 @@ if __name__ == '__main__':
         else:
             utt2feats = read_vectors_from_txt_file(args.outputs)
             for utt in utt2feats:
-                if args.mean:
+                if args.mode == 'mean':
                     labels.append(utt2spk[utt])
                     mean = np.mean(utt2feats[utt], axis=0)
                     embeddings.append(mean)
                     utts.append(utt) 
+                elif args.mode == 'random':
+                    np.random.seed(123)
+                    ind = np.random.choice(utt2feats[utt].shape[0], 5)
+                    for i in ind:
+                        embeddings.append(utt2feats[utt][i])
+                        labels.append(utt2spk[utt])
                 else:
                     for frame in utt2feats[utt]:
                         labels.append(utt2spk[utt])
