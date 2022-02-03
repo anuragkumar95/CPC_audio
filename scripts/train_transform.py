@@ -18,14 +18,14 @@ def read_vectors_from_txt_file(path_to_files):
         Yields:
             Tuple(str, np.array): utt and vector
     """
-    ret_val = {}
+    #ret_val = {}
     print("Reading input embeddings.")
     for file in tqdm.tqdm(os.listdir(path_to_files)):
         if file.split('.')[-1] != 'txt':
             continue
         feats = np.loadtxt(os.path.join(path_to_files, file))
-        ret_val[file.split('.')[0]] = feats
-    return ret_val
+        #ret_val[file.split('.')[0]] = feats
+        yield file.split('.')[0], feats
 
 def read_txt_vectors_from_stdin():
     """ Read vectors in text format. This code expects correct format.
@@ -243,22 +243,22 @@ if __name__ == '__main__':
                 except KeyError:
                     pass
         else:
-            utt2feats = read_vectors_from_txt_file(args.outputs)
-            for utt in utt2feats:
+            #utt2feats = read_vectors_from_txt_file(args.outputs)
+            for utt, feats in read_vectors_from_txt_file(args.outputs):
                 if args.mode == 'mean':
                     labels.append(utt2spk[utt])
-                    mean = np.mean(utt2feats[utt], axis=0)
+                    mean = np.mean(feats, axis=0)
                     embeddings.append(mean)
                     utts.append(utt) 
                 elif args.mode == 'random':
                     np.random.seed(123)
-                    ind = np.random.choice(utt2feats[utt].shape[0], 5)
+                    ind = np.random.choice(feats.shape[0], 5)
                     for i in ind:
-                        embeddings.append(utt2feats[utt][i])
+                        embeddings.append(feats[i])
                         labels.append(utt2spk[utt])
                     utts.append(utt)
                 else:
-                    for frame in utt2feats[utt]:
+                    for frame in feats:
                         labels.append(utt2spk[utt])
                         embeddings.append(frame)
                     utts.append(utt)
