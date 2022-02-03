@@ -25,8 +25,8 @@ def read_vectors_from_txt_file(path_to_files):
             continue
         feats = np.loadtxt(os.path.join(path_to_files, file))
         #ret_val[file.split('.')[0]] = feats
-        if len(file.split('.')[0]) <= 6:
-            print(file.split('.')[0])
+        
+        print(file.split('.')[0])
         yield file.split('.')[0], feats
 
 def read_txt_vectors_from_stdin():
