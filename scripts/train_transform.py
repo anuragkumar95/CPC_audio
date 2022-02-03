@@ -20,7 +20,7 @@ def read_vectors_from_txt_file(path_to_files):
     """
     #ret_val = {}
     print("Reading input embeddings.")
-    for file in tqdm.tqdm(os.listdir(path_to_files)):
+    for file in os.listdir(path_to_files):
         if file.split('.')[-1] != 'txt':
             continue
         feats = np.loadtxt(os.path.join(path_to_files, file))
@@ -244,7 +244,7 @@ if __name__ == '__main__':
                     pass
         else:
             #utt2feats = read_vectors_from_txt_file(args.outputs)
-            for utt, feats in read_vectors_from_txt_file(args.outputs):
+            for utt, feats in tqdm.tqdm(read_vectors_from_txt_file(args.outputs)):
                 if args.mode == 'mean':
                     labels.append(utt2spk[utt])
                     mean = np.mean(feats, axis=0)
