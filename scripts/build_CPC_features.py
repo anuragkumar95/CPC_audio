@@ -130,7 +130,12 @@ def main(argv):
         # Save the outputs
         file_name = os.path.splitext(os.path.basename(file_path))[0] + ".txt"
         file_out = os.path.join(args.pathOutputDir, file_name)
-        np.savetxt(file_out, CPC_features)
+        #np.savetxt(file_out, CPC_features)
+        with open(file_out, 'w') as f:
+            for i, feature in enumerate(CPC_features):
+                vals = " ".join([str(val) for val in feature])
+                f.write(str(i)+" [ "+vals+" ]\n")
+
     bar.finish()
     print(f"...done {len(seqNames)} files in {time()-start_time} seconds.")
 
