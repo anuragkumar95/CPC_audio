@@ -434,8 +434,8 @@ def main(argv):
     if args.pathVal is None:
         random.shuffle(seq_train)
         sizeTrain = int(0.99 * len(seq_train))
-        seqTrain, seq_val = seq_train[:sizeTrain], seq_train[sizeTrain:]
-        print(f'Found files: {len(seqTrain)} train, {len(seq_val)} val')
+        seq_train, seq_val = seq_train[:sizeTrain], seq_train[sizeTrain:]
+        print(f'Found files: {len(seq_train)} train, {len(seq_val)} val')
     else:
         seq_val = filterSeqs(args.pathVal, seqNames)
     # Dataset
