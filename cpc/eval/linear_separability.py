@@ -224,7 +224,7 @@ def trainLinsepClassification(
 def parse_args(argv):
     parser = argparse.ArgumentParser(description='Linear separability trainer'
                                      ' (default test in speaker separability)')
-    parser.add_argument('pathDB', type=str,
+    parser.add_argument('--pathDB', type=str,
                         help="Path to the directory containing the audio data.")
     parser.add_argument('load', type=str, nargs='*',
                         help="Path to the checkpoint to evaluate.")
