@@ -226,7 +226,7 @@ def parse_args(argv):
                                      ' (default test in speaker separability)')
     parser.add_argument('--pathDB', type=str,
                         help="Path to the directory containing the audio data.")
-    parser.add_argument('load', type=str, nargs='*',
+    parser.add_argument('--load', type=str, nargs='*',
                         help="Path to the checkpoint to evaluate.")
     parser.add_argument('--pathTrain', type=str, required=False,
                         help="Path to the list of the training sequences.")
