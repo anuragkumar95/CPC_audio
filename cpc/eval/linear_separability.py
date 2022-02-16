@@ -427,17 +427,17 @@ def main(argv):
     model = torch.nn.DataParallel(model, device_ids=range(args.nGPU))
 
     if args.pathTrain is not None:
-            seqTrain = filterSeqs(args.pathTrain, seqNames)
+            seq_train = filterSeqs(args.pathTrain, seqNames)
     else:
-        seqTrain = seqNames
+        seq_train = seqNames
 
     if args.pathVal is None:
-        random.shuffle(seqTrain)
-        sizeTrain = int(0.99 * len(seqTrain))
-        seqTrain, seqVal = seqTrain[:sizeTrain], seqTrain[sizeTrain:]
-        print(f'Found files: {len(seqTrain)} train, {len(seqVal)} val')
+        random.shuffle(seq_train)
+        sizeTrain = int(0.99 * len(seq_train))
+        seqTrain, seq_val = seq_train[:sizeTrain], seq_train[sizeTrain:]
+        print(f'Found files: {len(seqTrain)} train, {len(seq_val)} val')
     else:
-        seqVal = filterSeqs(args.pathVal, seqNames)
+        seq_val = filterSeqs(args.pathVal, seqNames)
     # Dataset
     #seq_train = filterSeqs(args.pathTrain, seqNames)
     #seq_val = filterSeqs(args.pathVal, seqNames)
