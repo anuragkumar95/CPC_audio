@@ -427,10 +427,11 @@ def main(argv):
     model = torch.nn.DataParallel(model, device_ids=range(args.nGPU))
 
     if args.pathTrain is not None:
-            seq_train = filterSeqs(args.pathTrain, seqNames)
+        seq_train = filterSeqs(args.pathTrain, seqNames)
+        print("Ewwww")
     else:
         seq_train = seqNames
-
+        print("Blabla")
     if args.pathVal is None:
         random.shuffle(seq_train)
         sizeTrain = int(0.99 * len(seq_train))
