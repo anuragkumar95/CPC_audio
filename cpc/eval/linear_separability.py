@@ -11,7 +11,7 @@ import numpy as np
 from pathlib import Path
 from copy import deepcopy
 import os
-
+import random
 import cpc.criterion as cr
 import cpc.feature_loader as fl
 import cpc.utils.misc as utils
@@ -226,9 +226,9 @@ def parse_args(argv):
                                      ' (default test in speaker separability)')
     parser.add_argument('pathDB', type=str,
                         help="Path to the directory containing the audio data.")
-    parser.add_argument('pathTrain', type=str,
+    parser.add_argument('pathTrain', type=str, required=False,
                         help="Path to the list of the training sequences.")
-    parser.add_argument('pathVal', type=str,
+    parser.add_argument('pathVal', type=str, required=False,
                         help="Path to the list of the test sequences.")
     parser.add_argument('load', type=str, nargs='*',
                         help="Path to the checkpoint to evaluate.")
@@ -425,9 +425,21 @@ def main(argv):
     model.cuda()
     model = torch.nn.DataParallel(model, device_ids=range(args.nGPU))
 
+    if args.pathTrain is not None:
+            seqTrain = filterSeqs(args.pathTrain, seqNames)
+    else:
+        seqTrain = seqNames
+
+    if args.pathVal is None:
+        random.shuffle(seqTrain)
+        sizeTrain = int(0.99 * len(seqTrain))
+        seqTrain, seqVal = seqTrain[:sizeTrain], seqTrain[sizeTrain:]
+        print(f'Found files: {len(seqTrain)} train, {len(seqVal)} val')
+    else:
+        seqVal = filterSeqs(args.pathVal, seqNames)
     # Dataset
-    seq_train = filterSeqs(args.pathTrain, seqNames)
-    seq_val = filterSeqs(args.pathVal, seqNames)
+    #seq_train = filterSeqs(args.pathTrain, seqNames)
+    #seq_val = filterSeqs(args.pathVal, seqNames)
 
     if args.debug:
         seq_train = seq_train[:1000]
