@@ -320,6 +320,8 @@ def main(argv):
                                      extension=args.file_extension,
                                      loadCache=not args.ignore_cache)
 
+    print("SEQNAMES:",len(seqNames))
+
     if args.model == "cpc":
         def loadCPCFeatureMaker(pathCheckpoint, gru_level=-1, get_encoded=False, keep_hidden=True):
             """
