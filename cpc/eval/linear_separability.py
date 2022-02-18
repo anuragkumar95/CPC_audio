@@ -232,7 +232,7 @@ def parse_args(argv):
                         help="Path to the list of the training sequences.")
     parser.add_argument('--pathVal', type=str, required=False,
                         help="Path to the list of the test sequences.")
-   
+
     parser.add_argument('--pathPhone', type=str, default=None,
                         help="Path to the phone labels. If given, will"
                         " compute the phone separability.")
