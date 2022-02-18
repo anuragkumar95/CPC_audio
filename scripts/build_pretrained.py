@@ -48,7 +48,7 @@ if __name__=='__main__':
     parser.add_argument('--model', required=True, type=str)
     parser.add_argument('--cpu', action='store_true')
     parser.add_argument('--save', required=True, type=str)
-    parser.add_argument('--pathDB', required=true, type=str)
+    parser.add_argument('--pathDB', required=True, type=str)
     
 
 
